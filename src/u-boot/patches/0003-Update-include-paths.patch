@@ -1,0 +1,193 @@
+From 6ec685b3a2e1aa8177a53a35e53f7213a4619002 Mon Sep 17 00:00:00 2001
+From: Mathias Gredal <mathiasgredal@icloud.com>
+Date: Mon, 30 Dec 2024 02:47:31 +0100
+Subject: [PATCH 3/9] Update include paths
+
+---
+ include/wasm3/m3_core.h |  1 -
+ lib/wasm3/m3_bind.c     |  6 +++---
+ lib/wasm3/m3_code.c     |  5 +++--
+ lib/wasm3/m3_compile.c  | 10 +++++-----
+ lib/wasm3/m3_core.c     |  9 +++++----
+ lib/wasm3/m3_env.c      |  8 ++++----
+ lib/wasm3/m3_function.c |  4 ++--
+ lib/wasm3/m3_info.c     |  6 +++---
+ lib/wasm3/m3_module.c   |  4 ++--
+ lib/wasm3/m3_parse.c    |  8 ++++----
+ 10 files changed, 31 insertions(+), 30 deletions(-)
+
+diff --git a/include/wasm3/m3_core.h b/include/wasm3/m3_core.h
+index ef81e040..d649f1d1 100644
+--- a/include/wasm3/m3_core.h
++++ b/include/wasm3/m3_core.h
+@@ -12,7 +12,6 @@
+ #include <stdlib.h>
+ #include <stdbool.h>
+ #include <string.h>
+-#include <assert.h>
+ 
+ #include "wasm3.h"
+ #include "m3_config.h"
+diff --git a/lib/wasm3/m3_bind.c b/lib/wasm3/m3_bind.c
+index 181a6b0c..10eb375e 100644
+--- a/lib/wasm3/m3_bind.c
++++ b/lib/wasm3/m3_bind.c
+@@ -5,9 +5,9 @@
+ //  Copyright © 2019 Steven Massey. All rights reserved.
+ //
+ 
+-#include "m3_env.h"
+-#include "m3_exception.h"
+-#include "m3_info.h"
++#include <wasm3/m3_env.h>
++#include <wasm3/m3_exception.h>
++#include <wasm3/m3_info.h>
+ 
+ u8 ConvertTypeCharToTypeId(char i_code)
+ {
+diff --git a/lib/wasm3/m3_code.c b/lib/wasm3/m3_code.c
+index 692af379..2cc6d2e4 100644
+--- a/lib/wasm3/m3_code.c
++++ b/lib/wasm3/m3_code.c
+@@ -6,8 +6,9 @@
+ //
+ 
+ #include <limits.h>
+-#include "m3_code.h"
+-#include "m3_env.h"
++
++#include <wasm3/m3_code.h>
++#include <wasm3/m3_env.h>
+ 
+ //---------------------------------------------------------------------------------------------------------------------------------
+ 
+diff --git a/lib/wasm3/m3_compile.c b/lib/wasm3/m3_compile.c
+index 5833b6e1..08abf473 100644
+--- a/lib/wasm3/m3_compile.c
++++ b/lib/wasm3/m3_compile.c
+@@ -8,11 +8,11 @@
+ // Allow using opcodes for compilation process
+ #define M3_COMPILE_OPCODES
+ 
+-#include "m3_env.h"
+-#include "m3_compile.h"
+-#include "m3_exec.h"
+-#include "m3_exception.h"
+-#include "m3_info.h"
++#include <wasm3/m3_env.h>
++#include <wasm3/m3_compile.h>
++#include <wasm3/m3_exec.h>
++#include <wasm3/m3_exception.h>
++#include <wasm3/m3_info.h>
+ 
+ //----- EMIT --------------------------------------------------------------------------------------------------------------
+ 
+diff --git a/lib/wasm3/m3_core.c b/lib/wasm3/m3_core.c
+index fdfd98f2..a4191417 100644
+--- a/lib/wasm3/m3_core.c
++++ b/lib/wasm3/m3_core.c
+@@ -6,11 +6,12 @@
+ //
+ 
+ #define M3_IMPLEMENT_ERROR_STRINGS
+-#include "m3_config.h"
+-#include "wasm3.h"
+ 
+-#include "m3_core.h"
+-#include "m3_env.h"
++#include <wasm3/m3_config.h>
++#include <wasm3/wasm3.h>
++
++#include <wasm3/m3_core.h>
++#include <wasm3/m3_env.h>
+ 
+ void m3_Abort(const char *message)
+ {
+diff --git a/lib/wasm3/m3_env.c b/lib/wasm3/m3_env.c
+index f60041b0..9b4097ed 100644
+--- a/lib/wasm3/m3_env.c
++++ b/lib/wasm3/m3_env.c
+@@ -8,10 +8,10 @@
+ #include <stdarg.h>
+ #include <limits.h>
+ 
+-#include "m3_env.h"
+-#include "m3_compile.h"
+-#include "m3_exception.h"
+-#include "m3_info.h"
++#include <wasm3/m3_env.h>
++#include <wasm3/m3_compile.h>
++#include <wasm3/m3_exception.h>
++#include <wasm3/m3_info.h>
+ 
+ IM3Environment m3_NewEnvironment()
+ {
+diff --git a/lib/wasm3/m3_function.c b/lib/wasm3/m3_function.c
+index 92ca241b..9f78a027 100644
+--- a/lib/wasm3/m3_function.c
++++ b/lib/wasm3/m3_function.c
+@@ -5,8 +5,8 @@
+ //  Copyright © 2021 Steven Massey. All rights reserved.
+ //
+ 
+-#include "m3_function.h"
+-#include "m3_env.h"
++#include <wasm3/m3_function.h>
++#include <wasm3/m3_env.h>
+ 
+ M3Result AllocFuncType(IM3FuncType *o_functionType, u32 i_numTypes)
+ {
+diff --git a/lib/wasm3/m3_info.c b/lib/wasm3/m3_info.c
+index ae885d0d..706c730b 100644
+--- a/lib/wasm3/m3_info.c
++++ b/lib/wasm3/m3_info.c
+@@ -5,9 +5,9 @@
+ //  Copyright © 2019 Steven Massey. All rights reserved.
+ //
+ 
+-#include "m3_env.h"
+-#include "m3_info.h"
+-#include "m3_compile.h"
++#include <wasm3/m3_env.h>
++#include <wasm3/m3_info.h>
++#include <wasm3/m3_compile.h>
+ 
+ #if defined(DEBUG) || (d_m3EnableStrace >= 2)
+ 
+diff --git a/lib/wasm3/m3_module.c b/lib/wasm3/m3_module.c
+index 6f5d5daa..05e2c318 100644
+--- a/lib/wasm3/m3_module.c
++++ b/lib/wasm3/m3_module.c
+@@ -5,8 +5,8 @@
+ //  Copyright © 2019 Steven Massey. All rights reserved.
+ //
+ 
+-#include "m3_env.h"
+-#include "m3_exception.h"
++#include <wasm3/m3_env.h>
++#include <wasm3/m3_exception.h>
+ 
+ void Module_FreeFunctions(IM3Module i_module)
+ {
+diff --git a/lib/wasm3/m3_parse.c b/lib/wasm3/m3_parse.c
+index 32a7fdc8..7152069c 100644
+--- a/lib/wasm3/m3_parse.c
++++ b/lib/wasm3/m3_parse.c
+@@ -5,10 +5,10 @@
+ //  Copyright © 2019 Steven Massey. All rights reserved.
+ //
+ 
+-#include "m3_env.h"
+-#include "m3_compile.h"
+-#include "m3_exception.h"
+-#include "m3_info.h"
++#include <wasm3/m3_env.h>
++#include <wasm3/m3_compile.h>
++#include <wasm3/m3_exception.h>
++#include <wasm3/m3_info.h>
+ 
+ M3Result ParseType_Table(IM3Module io_module, bytes_t i_bytes, cbytes_t i_end)
+ {
+-- 
+2.39.3 (Apple Git-146)
+

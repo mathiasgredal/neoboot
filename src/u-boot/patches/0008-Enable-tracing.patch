@@ -1,0 +1,80 @@
+From 3cea3b381a7445d15e7a3835fae18f9a6188790c Mon Sep 17 00:00:00 2001
+From: Mathias Gredal <mathiasgredal@icloud.com>
+Date: Mon, 30 Dec 2024 20:05:51 +0100
+Subject: [PATCH 8/9] Enable tracing
+
+---
+ include/wasm3/m3_exec.h | 43 ++++++++++++++++++++---------------------
+ 1 file changed, 21 insertions(+), 22 deletions(-)
+
+diff --git a/include/wasm3/m3_exec.h b/include/wasm3/m3_exec.h
+index 74583d66..dcdf370b 100644
+--- a/include/wasm3/m3_exec.h
++++ b/include/wasm3/m3_exec.h
+@@ -388,25 +388,25 @@ d_m3UnaryOp_i(i32, Extend8_s, OP_EXTEND8_S_I32)
+     }
+ 
+ #if d_m3HasFloat
+-                    d_m3TruncMacro(_r0, _fp0, i32, Trunc, f32, OP_I32_TRUNC_F32)
+-                        d_m3TruncMacro(_r0, _fp0, u32, Trunc, f32, OP_U32_TRUNC_F32)
+-                            d_m3TruncMacro(_r0, _fp0, i32, Trunc, f64, OP_I32_TRUNC_F64)
+-                                d_m3TruncMacro(_r0, _fp0, u32, Trunc, f64, OP_U32_TRUNC_F64)
+-
+-                                    d_m3TruncMacro(_r0, _fp0, i64, Trunc, f32, OP_I64_TRUNC_F32)
+-                                        d_m3TruncMacro(_r0, _fp0, u64, Trunc, f32, OP_U64_TRUNC_F32)
+-                                            d_m3TruncMacro(_r0, _fp0, i64, Trunc, f64, OP_I64_TRUNC_F64)
+-                                                d_m3TruncMacro(_r0, _fp0, u64, Trunc, f64, OP_U64_TRUNC_F64)
+-
+-                                                    d_m3TruncMacro(_r0, _fp0, i32, TruncSat, f32, OP_I32_TRUNC_SAT_F32)
+-                                                        d_m3TruncMacro(_r0, _fp0, u32, TruncSat, f32, OP_U32_TRUNC_SAT_F32)
+-                                                            d_m3TruncMacro(_r0, _fp0, i32, TruncSat, f64, OP_I32_TRUNC_SAT_F64)
+-                                                                d_m3TruncMacro(_r0, _fp0, u32, TruncSat, f64, OP_U32_TRUNC_SAT_F64)
+-
+-                                                                    d_m3TruncMacro(_r0, _fp0, i64, TruncSat, f32, OP_I64_TRUNC_SAT_F32)
+-                                                                        d_m3TruncMacro(_r0, _fp0, u64, TruncSat, f32, OP_U64_TRUNC_SAT_F32)
+-                                                                            d_m3TruncMacro(_r0, _fp0, i64, TruncSat, f64, OP_I64_TRUNC_SAT_F64)
+-                                                                                d_m3TruncMacro(_r0, _fp0, u64, TruncSat, f64, OP_U64_TRUNC_SAT_F64)
++                    d_m3TruncMacro(_r0, _fp0, i32, Trunc, f32, OP_I32_TRUNC_F32);
++d_m3TruncMacro(_r0, _fp0, u32, Trunc, f32, OP_U32_TRUNC_F32);
++d_m3TruncMacro(_r0, _fp0, i32, Trunc, f64, OP_I32_TRUNC_F64);
++d_m3TruncMacro(_r0, _fp0, u32, Trunc, f64, OP_U32_TRUNC_F64);
++
++d_m3TruncMacro(_r0, _fp0, i64, Trunc, f32, OP_I64_TRUNC_F32);
++d_m3TruncMacro(_r0, _fp0, u64, Trunc, f32, OP_U64_TRUNC_F32);
++d_m3TruncMacro(_r0, _fp0, i64, Trunc, f64, OP_I64_TRUNC_F64);
++d_m3TruncMacro(_r0, _fp0, u64, Trunc, f64, OP_U64_TRUNC_F64);
++
++d_m3TruncMacro(_r0, _fp0, i32, TruncSat, f32, OP_I32_TRUNC_SAT_F32);
++d_m3TruncMacro(_r0, _fp0, u32, TruncSat, f32, OP_U32_TRUNC_SAT_F32);
++d_m3TruncMacro(_r0, _fp0, i32, TruncSat, f64, OP_I32_TRUNC_SAT_F64);
++d_m3TruncMacro(_r0, _fp0, u32, TruncSat, f64, OP_U32_TRUNC_SAT_F64);
++
++d_m3TruncMacro(_r0, _fp0, i64, TruncSat, f32, OP_I64_TRUNC_SAT_F32);
++d_m3TruncMacro(_r0, _fp0, u64, TruncSat, f32, OP_U64_TRUNC_SAT_F32);
++d_m3TruncMacro(_r0, _fp0, i64, TruncSat, f64, OP_I64_TRUNC_SAT_F64);
++d_m3TruncMacro(_r0, _fp0, u64, TruncSat, f64, OP_U64_TRUNC_SAT_F64);
+ #endif
+ 
+ #define d_m3TypeModifyOp(REG_TO, REG_FROM, TO, NAME, FROM) \
+@@ -423,8 +423,8 @@ d_m3UnaryOp_i(i32, Extend8_s, OP_EXTEND8_S_I32)
+         nextOp();                                          \
+     }
+ 
+-    // Int to int
+-    d_m3TypeModifyOp(_r0, _r0, i64, Extend, i32);
++// Int to int
++d_m3TypeModifyOp(_r0, _r0, i64, Extend, i32);
+ d_m3TypeModifyOp(_r0, _r0, i64, Extend, u32);
+ 
+ // Float to float
+@@ -661,7 +661,6 @@ d_m3Op(CallRawFunction)
+ #if d_m3EnableStrace
+     IM3FuncType ftype = ctx.function->funcType;
+ 
+-    FILE *out = stderr;
+     char outbuff[1024];
+     char *outp = outbuff;
+     char *oute = outbuff + 1024;
+-- 
+2.39.3 (Apple Git-146)
+

@@ -1,0 +1,131 @@
+From 21c87f8afe7f0d712225f2525ede7fed860b234e Mon Sep 17 00:00:00 2001
+From: Mathias Gredal <mathiasgredal@icloud.com>
+Date: Mon, 30 Dec 2024 03:09:50 +0100
+Subject: [PATCH 6/9] Add wasm command
+
+---
+ cmd/Makefile |  1 +
+ cmd/wasm.c   | 98 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 99 insertions(+)
+ create mode 100644 cmd/wasm.c
+
+diff --git a/cmd/Makefile b/cmd/Makefile
+index d1f369de..c5493252 100644
+--- a/cmd/Makefile
++++ b/cmd/Makefile
+@@ -196,6 +196,7 @@ obj-$(CONFIG_CMD_UNLZ4) += unlz4.o
+ obj-$(CONFIG_CMD_UNZIP) += unzip.o
+ obj-$(CONFIG_CMD_UPL) += upl.o
+ obj-$(CONFIG_CMD_VIRTIO) += virtio.o
++obj-$(CONFIG_WASM) += wasm.o
+ obj-$(CONFIG_CMD_WDT) += wdt.o
+ obj-$(CONFIG_CMD_LZMADEC) += lzmadec.o
+ obj-$(CONFIG_CMD_UFS) += ufs.o
+diff --git a/cmd/wasm.c b/cmd/wasm.c
+new file mode 100644
+index 00000000..c02dd54e
+--- /dev/null
++++ b/cmd/wasm.c
+@@ -0,0 +1,98 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
++ */
++
++#include <command.h>
++#include <fs.h>
++#include <log.h>
++#include <mapmem.h>
++#include <vsprintf.h>
++#include <wasm3/wasm3.h>
++
++m3ApiRawFunction(env_print)
++{
++    m3ApiGetArgMem(void *, i_ptr);
++    m3ApiGetArg(uint32_t, i_size);
++
++    m3ApiCheckMem(i_ptr, i_size);
++
++    printf("%.*s", i_size, i_ptr);
++
++    m3ApiSuccess();
++}
++
++static int do_wasm(struct cmd_tbl *cmdtp, int flag, int argc,
++                   char *const argv[])
++{
++    printf("Running WASM program...\n");
++
++    // Parse arguments
++    if (argc != 3)
++        return CMD_RET_USAGE;
++
++    unsigned long src_addr = hextoul(argv[1], NULL);
++    unsigned long len = hextoul(argv[2], NULL);
++    void *real_addr = map_sysmem(src_addr, len);
++
++    M3Result result = m3Err_none;
++
++    IM3Environment env = m3_NewEnvironment();
++    if (!env)
++    {
++        log_err("failed to create environment\n");
++        return 1;
++    }
++
++    IM3Runtime runtime = m3_NewRuntime(env, 64 * 1024, NULL);
++    if (!runtime)
++    {
++        log_err("failed to create runtime\n");
++        return 1;
++    }
++
++    IM3Module module;
++    result = m3_ParseModule(env, &module, real_addr, len);
++    if (result != m3Err_none)
++    {
++        log_err("error parsing module: %s\n", result);
++        return 1;
++    }
++
++    result = m3_LoadModule(runtime, module);
++    if (result != m3Err_none)
++    {
++        log_err("error loading module: %s\n", result);
++        return 1;
++    }
++
++    result = m3_LinkRawFunction(module, "env", "env_print", "v(*i)", &env_print);
++    if (result != m3Err_none)
++    {
++        log_err("error linking function: %s\n", result);
++        return 1;
++    }
++
++    IM3Function function = NULL;
++    result = m3_FindFunction(&function, runtime, "main");
++    if (result != m3Err_none)
++    {
++        log_err("error finding function: %s\n", result);
++        return 1;
++    }
++
++    result = m3_CallV(function);
++    if (result != m3Err_none)
++    {
++        log_err("error calling function: %s\n", result);
++        return 1;
++    }
++
++    int32_t ret;
++    m3_GetResultsV(function, &ret);
++    m3_FreeRuntime(runtime);
++    m3_FreeEnvironment(env);
++    return ret;
++}
++
++U_BOOT_CMD(wasm, 3, 1, do_wasm, "run wasm program", "srcaddr [srcsize]");
+\ No newline at end of file
+-- 
+2.39.3 (Apple Git-146)
+

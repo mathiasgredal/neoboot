@@ -1,0 +1,25 @@
+From 0887e563e94bd66d897392de3e7152ce24bb1e4a Mon Sep 17 00:00:00 2001
+From: Mathias Gredal <mathiasgredal@icloud.com>
+Date: Mon, 30 Dec 2024 03:11:31 +0100
+Subject: [PATCH 7/9] Increase stack height
+
+---
+ include/wasm3/m3_config.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/wasm3/m3_config.h b/include/wasm3/m3_config.h
+index 482bb921..63f64eda 100644
+--- a/include/wasm3/m3_config.h
++++ b/include/wasm3/m3_config.h
+@@ -17,7 +17,7 @@
+ #endif
+ 
+ #ifndef d_m3MaxFunctionStackHeight
+-#define d_m3MaxFunctionStackHeight 2000 // max: 32768
++#define d_m3MaxFunctionStackHeight 2000 * 2 // max: 32768
+ #endif
+ 
+ #ifndef d_m3MaxLinearMemoryPages
+-- 
+2.39.3 (Apple Git-146)
+

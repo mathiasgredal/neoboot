@@ -1,0 +1,17 @@
+[package]
+name = "wasm_oss"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+log = "0.4.25"
+once_cell = "1.20.2"
+
+[dependencies.simple-async-local-executor]
+version = "0.1.0"
+default-features = false
+
+
