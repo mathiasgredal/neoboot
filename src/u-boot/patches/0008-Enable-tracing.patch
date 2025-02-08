@@ -1,7 +1,7 @@
 From 3cea3b381a7445d15e7a3835fae18f9a6188790c Mon Sep 17 00:00:00 2001
 From: Mathias Gredal <mathiasgredal@icloud.com>
 Date: Mon, 30 Dec 2024 20:05:51 +0100
-Subject: [PATCH 8/9] Enable tracing
+Subject: [PATCH 08/10] Enable tracing
 
 ---
  include/wasm3/m3_exec.h | 43 ++++++++++++++++++++---------------------

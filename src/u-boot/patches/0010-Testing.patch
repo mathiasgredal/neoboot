@@ -1,0 +1,35 @@
+From 82a7982b3cd51a9b6c09d13a46aac3285ae20d5e Mon Sep 17 00:00:00 2001
+From: Mathias Gredal <mathiasgredal@icloud.com>
+Date: Sat, 8 Feb 2025 07:35:07 +0100
+Subject: [PATCH 10/10] Testing
+
+---
+ cmd/wasm.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/cmd/wasm.c b/cmd/wasm.c
+index 45bab732..6af4a917 100644
+--- a/cmd/wasm.c
++++ b/cmd/wasm.c
+@@ -205,7 +205,7 @@ static err_t tcp_recv_callback(void *arg, struct tcp_pcb *pcb, struct pbuf *p, e
+     {
+         printf("tcp_recv_callback: p->len=%d\n", p->len);
+     }
+-    
++
+     if (err != ERR_OK)
+     {
+         printf("tcp_recv_callback error: %d\n", err);
+@@ -679,7 +679,8 @@ static int do_wasm(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[]
+ {
+     /* Inform the user that the WASM program is being executed */
+     printf("Running WASM program...\n");
+-
++    printf("Hello");
++    
+     /* Validate the number of arguments */
+     if (argc != 3)
+         return CMD_RET_USAGE;
+-- 
+2.39.3 (Apple Git-146)
+

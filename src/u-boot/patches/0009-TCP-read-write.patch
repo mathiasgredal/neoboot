@@ -1,20 +1,20 @@
-From 1252660ccff68094e21b7b82cd780dbdfb06313e Mon Sep 17 00:00:00 2001
+From 0d581b391b30c1211cbc9e6735d8f9e8d7593493 Mon Sep 17 00:00:00 2001
 From: Mathias Gredal <mathiasgredal@icloud.com>
 Date: Thu, 30 Jan 2025 01:59:19 +0100
-Subject: [PATCH 9/9] Testing
+Subject: [PATCH 09/10] TCP read/write
 
 ---
  Kconfig                           |  13 +-
  cmd/Kconfig                       |   6 -
- cmd/wasm.c                        | 660 +++++++++++++++++++++++++++++-
- configs/qemu-x86_wasm_defconfig   |   1 +
+ cmd/wasm.c                        | 743 +++++++++++++++++++++++++++++-
+ configs/qemu-x86_wasm_defconfig   |   3 +-
  configs/qemu_arm64_wasm_defconfig |   5 +-
  include/wasm3/m3_exec.h           |   1 +
  include/wasm3/wasm3.h             |   3 +-
  lib/lwip/lwip/src/core/tcp_out.c  |   1 +
  lib/wasm3/m3_env.c                |  17 +-
  lib/wasm3/m3_info.c               |   1 +
- 10 files changed, 664 insertions(+), 44 deletions(-)
+ 10 files changed, 748 insertions(+), 45 deletions(-)
 
 diff --git a/Kconfig b/Kconfig
 index c087a420..2906fbd8 100644
@@ -69,22 +69,20 @@ index 69347d60..1d7ddb4e 100644
 -	help
 -	  Enable WebAssembly support
 diff --git a/cmd/wasm.c b/cmd/wasm.c
-index c02dd54e..34f49b5a 100644
+index c02dd54e..45bab732 100644
 --- a/cmd/wasm.c
 +++ b/cmd/wasm.c
-@@ -3,96 +3,718 @@
+@@ -3,96 +3,801 @@
   * Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
   */
  
 +#include "dm/device.h"
-+#include "efi_api.h"
 +#include "lwip/api.h"
-+#include "lwip/def.h"
 +#include "lwip/err.h"
 +#include "lwip/ip4_addr.h"
 +#include "lwip/ip_addr.h"
 +#include "lwip/netif.h"
-+#include "lwip/priv/tcp_priv.h"
++#include "lwip/pbuf.h"
 +#include "lwip/tcp.h"
 +#include "lwip/tcpbase.h"
 +#include "lwip/timeouts.h"
@@ -240,10 +238,10 @@ index c02dd54e..34f49b5a 100644
 +    bool is_connected;              // Flag indicating whether the socket is connected
 +    uint64_t connection_start_time; // Time when the connection was established
 +    err_t err;                      // Error code (if any) for the socket
-+
-+    // TODO: Implement these using the tcp_sent callback
-+    uint32_t bytes_sent;       // Number of sent bytes
-+    uint32_t bytes_sent_acked; // Number of sent bytes acknowledged
++    uint32_t bytes_sent;            // Number of sent bytes
++    uint32_t bytes_sent_acked;      // Number of sent bytes acknowledged
++    struct pbuf *recv_buffer;       // Receive buffer
++    uint32_t recv_bytes;            // Number of received bytes
 +} NetworkSocket;
 +
 +/*
@@ -264,12 +262,46 @@ index c02dd54e..34f49b5a 100644
 +}
 +
 +static err_t tcp_sent_callback(void *arg, struct tcp_pcb *pcb, u16_t len)
- {
++{
 +    for (int i = 0; i < MAX_NETWORK_SOCKETS; i++)
 +    {
 +        if (network_sockets[i].pcb != pcb)
 +            continue;
++
 +        network_sockets[i].bytes_sent_acked += len;
++        break;
++    }
++
++    return ERR_OK;
++}
++
++static err_t tcp_recv_callback(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
++{
++    printf("tcp_recv_callback: %d\n", err);
++    if (p != NULL)
++    {
++        printf("tcp_recv_callback: p->len=%d\n", p->len);
++    }
++    
++    if (err != ERR_OK)
++    {
++        printf("tcp_recv_callback error: %d\n", err);
++        return err;
++    }
++
++    for (int i = 0; i < MAX_NETWORK_SOCKETS; i++)
++    {
++        if (network_sockets[i].pcb != (struct tcp_pcb *)arg)
++            continue;
++
++        if (network_sockets[i].recv_buffer != NULL)
++        {
++            pbuf_cat(network_sockets[i].recv_buffer, p);
++        }
++        else
++        {
++            network_sockets[i].recv_buffer = p;
++        }
 +
 +        break;
 +    }
@@ -302,7 +334,6 @@ index c02dd54e..34f49b5a 100644
 +        if (network_sockets[i].is_connected == false)
 +        {
 +            return ERR_CONN;
-+            ;
 +        }
 +
 +        if (network_sockets[i].err != ERR_OK)
@@ -360,6 +391,9 @@ index c02dd54e..34f49b5a 100644
 +
 +        if (network_sockets[i].pcb->state != CLOSED)
 +            tcp_abort(network_sockets[i].pcb);
++        
++        if (network_sockets[i].recv_buffer != NULL)
++            pbuf_free(network_sockets[i].recv_buffer);
 +
 +        network_sockets[i] = (NetworkSocket){0};
 +    }
@@ -401,6 +435,7 @@ index c02dd54e..34f49b5a 100644
 +        tcp_arg(socket, socket);
 +        tcp_err(socket, tcp_err_callback);
 +        tcp_sent(socket, tcp_sent_callback);
++        tcp_recv(socket, tcp_recv_callback);
 +    }
 +
 +    /* Return the handle to the newly created socket */
@@ -413,7 +448,7 @@ index c02dd54e..34f49b5a 100644
 + * be closed, an error code is returned. On success, zero is returned.
 + */
 +m3ApiRawFunction(env_socket_close)
-+{
+ {
 +    m3ApiReturnType(int32_t);      // Declare the return type as 32-bit integer
 +    m3ApiGetArg(uint64_t, socket); // Retrieve the socket handle from the arguments
 +
@@ -422,6 +457,12 @@ index c02dd54e..34f49b5a 100644
 +    {
 +        if (network_sockets[i].pcb != (struct tcp_pcb *)socket)
 +            continue;
++
++        if (network_sockets[i].recv_buffer != NULL)
++        {
++            pbuf_free(network_sockets[i].recv_buffer);
++            network_sockets[i].recv_buffer = NULL;
++        }
 +
 +        /* Clear the socket state */
 +        network_sockets[i] = (NetworkSocket){0};
@@ -594,29 +635,27 @@ index c02dd54e..34f49b5a 100644
 +    }
 +
 +    err_t err = tcp_write((struct tcp_pcb *)socket, (void *)buf, len, TCP_WRITE_FLAG_COPY);
-+    if (err == ERR_OK)
-+    {
-+        err = tcp_output((struct tcp_pcb *)socket);
-+        if (err == ERR_OK)
-+        {
-+            for (int i = 0; i < MAX_NETWORK_SOCKETS; i++)
-+            {
-+                if (network_sockets[i].pcb == (struct tcp_pcb *)socket)
-+                {
-+                    network_sockets[i].bytes_sent += len;
-+                }
-+            }
-+            m3ApiReturn(ERR_OK);
-+        }
-+        else
-+        {
-+            m3ApiReturn(err);
-+        }
-+    }
-+    else
++    if (err != ERR_OK)
 +    {
 +        m3ApiReturn(err);
 +    }
++
++    err = tcp_output((struct tcp_pcb *)socket);
++    if (err != ERR_OK)
++    {
++        m3ApiReturn(err);
++    }
++
++    for (int i = 0; i < MAX_NETWORK_SOCKETS; i++)
++    {
++        if (network_sockets[i].pcb == (struct tcp_pcb *)socket)
++        {
++            network_sockets[i].bytes_sent += len;
++            break;
++        }
++    }
++
++    m3ApiReturn(ERR_OK);
 +}
 +
 +m3ApiRawFunction(env_socket_all_writes_acked)
@@ -646,6 +685,49 @@ index c02dd54e..34f49b5a 100644
 +                m3ApiReturn(ERR_WOULDBLOCK);
 +            }
 +        }
++    }
++
++    m3ApiReturn(ERR_VAL);
++}
++
++m3ApiRawFunction(env_socket_read)
++{
++    m3ApiReturnType(int32_t);
++    m3ApiGetArg(uint64_t, socket);
++    m3ApiGetArgMem(void *, buf);
++    m3ApiGetArg(uint32_t, len);
++
++    err_t socket_err = get_socket_connection_error(socket);
++
++    if (socket_err != ERR_OK)
++    {
++        m3ApiReturn(socket_err);
++    }
++
++    for (int i = 0; i < MAX_NETWORK_SOCKETS; i++)
++    {
++        if (network_sockets[i].pcb != (struct tcp_pcb *)socket)
++        {
++            continue;
++        }
++        
++        struct pbuf *p = network_sockets[i].recv_buffer;
++        if (p == NULL)
++        {
++            m3ApiReturn(ERR_WOULDBLOCK);
++        }
++
++        uint16_t read_len = pbuf_copy_partial(p, buf, len, network_sockets[i].recv_bytes);
++        network_sockets[i].recv_bytes += read_len;
++
++        if (network_sockets[i].recv_bytes == p->tot_len)
++        {
++            pbuf_free(p);
++            network_sockets[i].recv_buffer = NULL;
++            network_sockets[i].recv_bytes = 0;
++        }
++
++        m3ApiReturn(read_len);
 +    }
 +
 +    m3ApiReturn(ERR_VAL);
@@ -752,6 +834,7 @@ index c02dd54e..34f49b5a 100644
 +    LINK_RAW_FUNCTION(module, "env_used_sockets", "I()", &env_used_sockets);
 +    LINK_RAW_FUNCTION(module, "env_socket_write", "i(I*i)", &env_socket_write);
 +    LINK_RAW_FUNCTION(module, "env_socket_all_writes_acked", "i(I)", &env_socket_all_writes_acked);
++    LINK_RAW_FUNCTION(module, "env_socket_read", "i(I*i)", &env_socket_read);
  
 +    /* Locate the "main" function within the WASM module */
      IM3Function function = NULL;
@@ -812,15 +895,16 @@ index c02dd54e..34f49b5a 100644
 +           "  srcaddr - Address of the WASM module (hexadecimal)\n"
 +           "  srcsize - Size of the WASM module in bytes (hexadecimal)");
 diff --git a/configs/qemu-x86_wasm_defconfig b/configs/qemu-x86_wasm_defconfig
-index c677f504..2781f410 100644
+index c677f504..e811f083 100644
 --- a/configs/qemu-x86_wasm_defconfig
 +++ b/configs/qemu-x86_wasm_defconfig
 @@ -1,6 +1,7 @@
  #include <configs/qemu-x86_defconfig>
  
  CONFIG_WASM=y
+-CONFIG_BOOTCOMMAND="setenv serverip 10.0.2.2; setenv ipaddr 10.0.2.15; setenv netmask 255.255.255.0; tftpboot $loadaddr main.wasm; wasm $loadaddr $filesize" 
 +
- CONFIG_BOOTCOMMAND="setenv serverip 10.0.2.2; setenv ipaddr 10.0.2.15; setenv netmask 255.255.255.0; tftpboot $loadaddr main.wasm; wasm $loadaddr $filesize" 
++CONFIG_BOOTCOMMAND="setenv serverip 10.0.2.2; setenv ipaddr 10.0.2.15; setenv netmask 255.255.255.0; tftpboot $loadaddr main.wasm; dhcp; wasm $loadaddr $filesize" 
  CONFIG_SYS_MALLOC_LEN=0x10000000
  SYS_MALLOC_CLEAR_ON_INIT=n
 \ No newline at end of file

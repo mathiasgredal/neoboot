@@ -62,6 +62,41 @@ impl Future for TcpWrite {
     }
 }
 
+struct TcpRead {
+    socket: u64,
+    buf: Vec<u8>,
+    len: u16,
+}
+
+impl Future for TcpRead {
+    type Output = Result<Vec<u8>, LwipError>;
+
+    fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+        unsafe { ffi::env_lwip_rx() };
+
+        let result = unsafe {
+            ffi::env_socket_read(
+                self.socket,
+                self.buf.as_ptr(),
+                self.len as u32,
+            )
+        };
+
+        if result == LwipError::WouldBlock.to_code() {
+            return Poll::Pending;
+        }
+
+        if result >= 0 {
+            let ret_buf = self.buf.iter().take(result as usize).cloned().collect();
+            return Poll::Ready(Ok(ret_buf));
+        }
+
+        return Poll::Ready(Err(LwipError::from_code(result)));
+    }
+}
+
+
+#[derive(Clone)]
 pub struct TcpSocket {
     pub socket: u64,
 }
@@ -100,9 +135,25 @@ impl TcpSocket {
         Ok(Self { socket })
     }
 
-    // pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-    //     // Implementation for reading
-    // }
+    pub async fn read(&self, len: u16) -> Result<Vec<u8>, LwipError> {
+        // 1. Heap malloc len bytes
+        let buf: Vec<u8> = vec![0x0; len as usize];
+
+        // 2. Call env_socket_read
+        let result = TcpRead {
+            socket: self.socket,
+            buf,
+            len,
+        }.await;
+
+        if result.is_err() {
+            info!("Socket read failed");
+            return Err(result.err().unwrap());
+        }
+
+        // 3. If no error, return the read buffer
+        return Ok(result.unwrap());
+    }
 
     pub async fn write(&self, buf: &[u8]) -> Result<usize, LwipError> {
         // 1. Call env_socket_write
