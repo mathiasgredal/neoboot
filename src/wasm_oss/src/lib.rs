@@ -65,7 +65,7 @@ fn mainloop_2(executor: Executor) {
             return;
         }
 
-        let mut socket = socket.unwrap();
+        let socket = socket.unwrap();
 
         let result = socket.bind("0.0.0.0", 8080).await;
         if result.is_err() {
@@ -96,6 +96,8 @@ fn mainloop_2(executor: Executor) {
 
             let buf = result.unwrap();
             log::info!("Read {} bytes: {:?}", buf.len(), buf);
+
+            client_socket.close().await;
         }
     });
 }
@@ -104,8 +106,9 @@ fn mainloop_2(executor: Executor) {
 pub extern "C" fn main() {
     panic::set_once();
     init_with_level(log::Level::Info).unwrap();
+    info!("Starting mainloop");
     let executor = Executor::default();
-    let setup_result = unsafe { ffi::env_setup_network() };
+    let setup_result = unsafe { ffi::env_net_setup() };
     if setup_result != 0 {
         log::error!("Failed to setup network: {}", setup_result);
         return;
@@ -115,7 +118,7 @@ pub extern "C" fn main() {
     // mainloop(executor.clone());
     let exit_2 = exit.clone();
     executor.spawn(async move {
-        sleep_ms(1000000).await;
+        sleep_ms(100000).await;
         *exit_2.borrow_mut() = true;
     });
 
@@ -134,5 +137,5 @@ pub extern "C" fn main() {
     }
 
     info!("Mainloop finished");
-    unsafe { ffi::env_teardown_network() };
+    unsafe { ffi::env_net_teardown() };
 }

@@ -15,16 +15,16 @@ fn ip_addr_to_u32(addr: &str) -> Result<u32, LwipError> {
 }
 
 struct TcpConnection {
-    socket: u64,
+    socket: i32,
 }
 
 impl Future for TcpConnection {
     type Output = Result<(), LwipError>;
 
     fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
-        unsafe { ffi::env_lwip_rx() };
+        unsafe { ffi::env_net_rx() };
 
-        let err = unsafe { ffi::env_socket_check_connection(self.socket) };
+        let err = unsafe { ffi::env_net_socket_connect_poll(self.socket) };
 
         if err == LwipError::InProgress.to_code() {
             return Poll::Pending;
@@ -39,16 +39,16 @@ impl Future for TcpConnection {
 }
 
 struct TcpWrite {
-    socket: u64,
+    socket: i32,
 }
 
 impl Future for TcpWrite {
     type Output = Result<(), LwipError>;
 
     fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
-        unsafe { ffi::env_lwip_rx() };
+        unsafe { ffi::env_net_rx() };
 
-        let err = unsafe { ffi::env_socket_all_writes_acked(self.socket) };
+        let err = unsafe { ffi::env_net_socket_write_poll(self.socket) };
 
         if err == LwipError::WouldBlock.to_code() {
             return Poll::Pending;
@@ -63,7 +63,7 @@ impl Future for TcpWrite {
 }
 
 struct TcpRead {
-    socket: u64,
+    socket: i32,
     buf: Vec<u8>,
     len: u16,
 }
@@ -72,10 +72,10 @@ impl Future for TcpRead {
     type Output = Result<Vec<u8>, LwipError>;
 
     fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
-        unsafe { ffi::env_lwip_rx() };
+        unsafe { ffi::env_net_rx() };
 
         let result = unsafe {
-            ffi::env_socket_read(
+            ffi::env_net_socket_read(
                 self.socket,
                 self.buf.as_ptr(),
                 self.len as u32,
@@ -97,21 +97,22 @@ impl Future for TcpRead {
 
 
 struct TcpAccept {
-    socket: u64,
+    socket: i32,
 }
 
 impl Future for TcpAccept {
     type Output = Result<TcpSocket, LwipError>;
 
     fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
-        unsafe { ffi::env_lwip_rx() };
+        unsafe { ffi::env_net_rx() };
+        let result = unsafe { ffi::env_net_socket_accept_poll(self.socket) };
 
-        // TODO: Make some other call before, to check if the connection is still valid
-
-        let result = unsafe { ffi::env_socket_accept_claim_connection(self.socket) };
-
-        if result == 0 {
+        if result == LwipError::WouldBlock.to_code() {
             return Poll::Pending;
+        }
+
+        if result < 0 {
+            return Poll::Ready(Err(LwipError::from_code(result)));
         }
 
         return Poll::Ready(Ok(TcpSocket { socket: result }));
@@ -120,16 +121,24 @@ impl Future for TcpAccept {
 
 #[derive(Clone)]
 pub struct TcpSocket {
-    pub socket: u64,
+    pub socket: i32,
 }
 
 impl TcpSocket {
     pub async fn create() -> Result<Self, LwipError> {
-        let socket = unsafe { ffi::env_socket_create() };
-        if socket == 0 {
-            return Err(LwipError::ConnectionAborted);
+        let socket = unsafe { ffi::env_net_socket_new() };
+        if socket < 0 {
+            return Err(LwipError::from_code(socket));
         }
         Ok(Self { socket })
+    }
+
+    pub async fn close(&self) -> Result<(), LwipError> {
+        let result = unsafe { ffi::env_net_socket_free(self.socket) };
+        if result != LwipError::Ok.to_code() {
+            return Err(LwipError::from_code(result));
+        }
+        Ok(())
     }
 
     pub async fn connect(
@@ -138,7 +147,7 @@ impl TcpSocket {
         port: u16,
     ) -> Result<(), LwipError> {
         let addr = ip_addr_to_u32(addr_str)?;
-        let result: i32 = unsafe { ffi::env_socket_connect(self.socket, addr, port.into()) };
+        let result: i32 = unsafe { ffi::env_net_socket_connect(self.socket, addr, port.into()) };
 
         if result != LwipError::Ok.to_code() {
             return Err(LwipError::from_code(result));
@@ -150,7 +159,7 @@ impl TcpSocket {
         // If the connection attempt failed, close the socket
         if result.is_err() {
             info!("Failed to connect to {}:{}", addr_str, port);
-            let close_result = unsafe { ffi::env_socket_close(self.socket) };
+            let close_result = unsafe { ffi::env_net_socket_free(self.socket) };
             if close_result != LwipError::Ok.to_code() {
                 error!(
                     "Failed to close socket: {}",
@@ -164,30 +173,29 @@ impl TcpSocket {
         Ok(())
     }
 
-    pub async fn bind(&mut self, addr_str: &str, port: u16) -> Result<(), LwipError> {
+    pub async fn bind(&self, addr_str: &str, port: u16) -> Result<(), LwipError> {
         let addr = ip_addr_to_u32(addr_str)?;
-        let result = unsafe { ffi::env_socket_bind(self.socket, addr, port.into()) };
+        let result = unsafe { ffi::env_net_socket_bind(self.socket, addr, port.into()) };
         if result != LwipError::Ok.to_code() {
             return Err(LwipError::from_code(result));
         }
         Ok(())
     }
 
-    pub async fn listen(&mut self, backlog: u32) -> Result<(), LwipError> {
-        let result = unsafe { ffi::env_socket_listen(self.socket, backlog) };
+    pub async fn listen(&self, backlog: u32) -> Result<(), LwipError> {
+        let result = unsafe { ffi::env_net_socket_listen(self.socket, backlog) };
 
         info!("Listening on socket: {}", self.socket);
         info!("Result: {}", result);
-        if result == 0 {
-            return Err(LwipError::InvalidValue);
+        if result < 0 {
+            return Err(LwipError::from_code(result));
         }
 
-        self.socket = result;
         Ok(())
     }
 
     pub async fn accept(&self) -> Result<Self, LwipError> {
-        let result = unsafe { ffi::env_socket_accept(self.socket) };
+        let result = unsafe { ffi::env_net_socket_accept(self.socket) };
         info!("Accepting on socket: {}", self.socket);
         if result != LwipError::Ok.to_code() {
             return Err(LwipError::from_code(result));
@@ -225,7 +233,7 @@ impl TcpSocket {
 
     pub async fn write(&self, buf: &[u8]) -> Result<usize, LwipError> {
         // 1. Call env_socket_write
-        let result = unsafe { ffi::env_socket_write(self.socket, buf.as_ptr(), buf.len() as u32) };
+        let result = unsafe { ffi::env_net_socket_write(self.socket, buf.as_ptr(), buf.len() as u32) };
 
         if result != LwipError::Ok.to_code() {
             // TODO: Delete the socket

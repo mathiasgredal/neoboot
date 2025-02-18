@@ -1,10 +1,10 @@
-From 2ff7b1ac63febd7127ca35f5eff9c504f15af3d3 Mon Sep 17 00:00:00 2001
+From 016c71b94fe9868046622ef1b580e13b9af22ff5 Mon Sep 17 00:00:00 2001
 From: Mathias Gredal <mathiasgredal@icloud.com>
 Date: Sat, 8 Feb 2025 07:35:07 +0100
 Subject: [PATCH 10/10] Testing
 
 ---
- cmd/wasm.c                     | 668 +--------------------------------
+ cmd/wasm.c                     | 664 +--------------------------------
  include/wasm_ffi/wasm_ffi.h    |  20 +
  include/wasm_ffi/wasm_net.h    |  43 +++
  include/wasm_ffi/wasm_socket.h | 183 +++++++++
@@ -12,10 +12,10 @@ Subject: [PATCH 10/10] Testing
  lib/Makefile                   |   2 +-
  lib/wasm_ffi/Makefile          |   5 +
  lib/wasm_ffi/wasm_ffi.c        |  53 +++
- lib/wasm_ffi/wasm_net.c        | 201 ++++++++++
- lib/wasm_ffi/wasm_socket.c     | 557 +++++++++++++++++++++++++++
+ lib/wasm_ffi/wasm_net.c        | 205 ++++++++++
+ lib/wasm_ffi/wasm_socket.c     | 560 +++++++++++++++++++++++++++
  lib/wasm_ffi/wasm_sys.c        |  55 +++
- 11 files changed, 1179 insertions(+), 664 deletions(-)
+ 11 files changed, 1185 insertions(+), 661 deletions(-)
  create mode 100644 include/wasm_ffi/wasm_ffi.h
  create mode 100644 include/wasm_ffi/wasm_net.h
  create mode 100644 include/wasm_ffi/wasm_socket.h
@@ -27,10 +27,10 @@ Subject: [PATCH 10/10] Testing
  create mode 100644 lib/wasm_ffi/wasm_sys.c
 
 diff --git a/cmd/wasm.c b/cmd/wasm.c
-index 45bab732..4b1e2a9f 100644
+index 45bab732..2e3ba66c 100644
 --- a/cmd/wasm.c
 +++ b/cmd/wasm.c
-@@ -3,658 +3,13 @@
+@@ -3,658 +3,15 @@
   * Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
   */
  
@@ -47,8 +47,8 @@ index 45bab732..4b1e2a9f 100644
 -#include "net-common.h"
 +
  #include <command.h>
--#include <fs.h>
--#include <log.h>
+ #include <fs.h>
+ #include <log.h>
  #include <mapmem.h>
 -#include <net-lwip.h>
 -#include <stdint.h>
@@ -691,19 +691,10 @@ index 45bab732..4b1e2a9f 100644
  
  /*
   * Execute a WebAssembly (WASM) program.
-@@ -679,6 +34,7 @@ static int do_wasm(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[]
- {
-     /* Inform the user that the WASM program is being executed */
-     printf("Running WASM program...\n");
-+    printf("Hello");
- 
-     /* Validate the number of arguments */
-     if (argc != 3)
-@@ -730,22 +86,8 @@ static int do_wasm(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[]
-         return 1;
+@@ -731,21 +88,8 @@ static int do_wasm(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[]
      }
  
--    /* Link host functions required by the WASM module */
+     /* Link host functions required by the WASM module */
 -    LINK_RAW_FUNCTION(module, "env_print", "v(*i)", &env_print);
 -    LINK_RAW_FUNCTION(module, "env_key_pressed", "i()", &env_key_pressed);
 -    LINK_RAW_FUNCTION(module, "env_now", "I()", &env_now);
@@ -719,8 +710,8 @@ index 45bab732..4b1e2a9f 100644
 -    LINK_RAW_FUNCTION(module, "env_socket_write", "i(I*i)", &env_socket_write);
 -    LINK_RAW_FUNCTION(module, "env_socket_all_writes_acked", "i(I)", &env_socket_all_writes_acked);
 -    LINK_RAW_FUNCTION(module, "env_socket_read", "i(I*i)", &env_socket_read);
-+    /* Link the WASM module FFI functions */
 +    wasm_ffi_link_all(module);
++
  
      /* Locate the "main" function within the WASM module */
      IM3Function function = NULL;
@@ -1138,20 +1129,24 @@ index 00000000..005e8d11
 \ No newline at end of file
 diff --git a/lib/wasm_ffi/wasm_net.c b/lib/wasm_ffi/wasm_net.c
 new file mode 100644
-index 00000000..4789df7c
+index 00000000..08380b4f
 --- /dev/null
 +++ b/lib/wasm_ffi/wasm_net.c
-@@ -0,0 +1,201 @@
+@@ -0,0 +1,205 @@
 +// SPDX-License-Identifier: GPL-2.0+
 +/*
 + * Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
 + */
 +
 +#include "lwip/err.h"
++#include "wasm3/wasm3.h"
++#include <stdint.h>
 +#include <wasm_ffi/wasm_net.h>
 +#include <wasm_ffi/wasm_socket.h>
 +
 +#include <lwip/timeouts.h>
++#include <lwip/tcp.h>
++#include <lwip/tcpbase.h>
 +#include <net-common.h>
 +#include <net-lwip.h>
 +
@@ -1181,7 +1176,7 @@ index 00000000..4789df7c
 +
 +m3ApiRawFunction(net_setup)
 +{
-+    m3ApiReturnType(err_t);
++    m3ApiReturnType(int32_t);
 +    err_t err = ERR_OK;
 +
 +    /* Reset the network state */
@@ -1214,7 +1209,7 @@ index 00000000..4789df7c
 +
 +m3ApiRawFunction(net_teardown)
 +{
-+    m3ApiReturnType(err_t);
++    m3ApiReturnType(int32_t);
 +    err_t err = net_teardown_util();
 +    if (err != ERR_OK)
 +    {
@@ -1226,7 +1221,7 @@ index 00000000..4789df7c
 +
 +m3ApiRawFunction(net_rx)
 +{
-+    m3ApiReturnType(err_t);
++    m3ApiReturnType(int32_t);
 +
 +    /* Check if the network interface is valid */
 +    if (!current_netif)
@@ -1250,23 +1245,23 @@ index 00000000..4789df7c
 +/* Bindings to all functions in wasm_socket.h */
 +m3ApiRawFunction(net_socket_new_ffi)
 +{
-+    m3ApiReturnType(err_t);
++    m3ApiReturnType(int32_t);
 +    err_t err = net_socket_new();
 +    m3ApiReturn(err);
 +}
 +
 +m3ApiRawFunction(net_socket_free_ffi)
 +{
-+    m3ApiReturnType(err_t);
-+    m3ApiGetArg(int8_t, index);
++    m3ApiReturnType(int32_t);
++    m3ApiGetArg(int32_t, index);
 +    err_t err = net_socket_free(index);
 +    m3ApiReturn(err);
 +}
 +
 +m3ApiRawFunction(net_socket_connect_ffi)
 +{
-+    m3ApiReturnType(err_t);
-+    m3ApiGetArg(int8_t, index);
++    m3ApiReturnType(int32_t);
++    m3ApiGetArg(int32_t, index);
 +    m3ApiGetArg(uint32_t, ip);
 +    m3ApiGetArg(uint16_t, port);
 +    err_t err = net_socket_connect(index, ip, port);
@@ -1275,16 +1270,16 @@ index 00000000..4789df7c
 +
 +m3ApiRawFunction(net_socket_connect_poll_ffi)
 +{
-+    m3ApiReturnType(err_t);
-+    m3ApiGetArg(int8_t, index);
++    m3ApiReturnType(int32_t);
++    m3ApiGetArg(int32_t, index);
 +    err_t err = net_socket_connect_poll(index);
 +    m3ApiReturn(err);
 +}
 +
 +m3ApiRawFunction(net_socket_bind_ffi)
 +{
-+    m3ApiReturnType(err_t);
-+    m3ApiGetArg(int8_t, index);
++    m3ApiReturnType(int32_t);
++    m3ApiGetArg(int32_t, index);
 +    m3ApiGetArg(uint32_t, ip);
 +    m3ApiGetArg(uint16_t, port);
 +    err_t err = net_socket_bind(index, ip, port);
@@ -1293,8 +1288,8 @@ index 00000000..4789df7c
 +
 +m3ApiRawFunction(net_socket_listen_ffi)
 +{
-+    m3ApiReturnType(err_t);
-+    m3ApiGetArg(int8_t, index);
++    m3ApiReturnType(int32_t);
++    m3ApiGetArg(int32_t, index);
 +    m3ApiGetArg(uint16_t, backlog);
 +    err_t err = net_socket_listen(index, backlog);
 +    m3ApiReturn(err);
@@ -1302,25 +1297,25 @@ index 00000000..4789df7c
 +
 +m3ApiRawFunction(net_socket_accept_ffi)
 +{
-+    m3ApiReturnType(err_t);
-+    m3ApiGetArg(int8_t, index);
++    m3ApiReturnType(int32_t);
++    m3ApiGetArg(int32_t, index);
 +    err_t err = net_socket_accept(index);
 +    m3ApiReturn(err);
 +}
 +
 +m3ApiRawFunction(net_socket_accept_poll_ffi)
 +{
-+    m3ApiReturnType(err_t);
-+    m3ApiGetArg(int8_t, index);
++    m3ApiReturnType(int32_t);
++    m3ApiGetArg(int32_t, index);
 +    err_t err = net_socket_accept_poll(index);
 +    m3ApiReturn(err);
 +}
 +
 +m3ApiRawFunction(net_socket_read_ffi)
 +{
-+    m3ApiReturnType(err_t);
-+    m3ApiGetArg(int8_t, index);
-+    m3ApiGetArg(void *, buffer);
++    m3ApiReturnType(int32_t);
++    m3ApiGetArg(int32_t, index);
++    m3ApiGetArgMem(void *, buffer);
 +    m3ApiGetArg(uint32_t, length);
 +    err_t err = net_socket_read(index, buffer, length);
 +    m3ApiReturn(err);
@@ -1328,9 +1323,9 @@ index 00000000..4789df7c
 +
 +m3ApiRawFunction(net_socket_write_ffi)
 +{
-+    m3ApiReturnType(err_t);
-+    m3ApiGetArg(int8_t, index);
-+    m3ApiGetArg(void *, buffer);
++    m3ApiReturnType(int32_t);
++    m3ApiGetArg(int32_t, index);
++    m3ApiGetArgMem(void *, buffer);
 +    m3ApiGetArg(uint32_t, length);
 +    err_t err = net_socket_write(index, buffer, length);
 +    m3ApiReturn(err);
@@ -1338,17 +1333,17 @@ index 00000000..4789df7c
 +
 +m3ApiRawFunction(net_socket_write_poll_ffi)
 +{
-+    m3ApiReturnType(err_t);
-+    m3ApiGetArg(int8_t, index);
++    m3ApiReturnType(int32_t);
++    m3ApiGetArg(int32_t, index);
 +    err_t err = net_socket_write_poll(index);
 +    m3ApiReturn(err);
 +}
 diff --git a/lib/wasm_ffi/wasm_socket.c b/lib/wasm_ffi/wasm_socket.c
 new file mode 100644
-index 00000000..4314472d
+index 00000000..b6de9a5e
 --- /dev/null
 +++ b/lib/wasm_ffi/wasm_socket.c
-@@ -0,0 +1,557 @@
+@@ -0,0 +1,560 @@
 +// SPDX-License-Identifier: GPL-2.0+
 +/*
 + * Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
@@ -1508,6 +1503,9 @@ index 00000000..4314472d
 +    tcp_err(net_ctx.sockets[client_index].pcb.tcp, tcp_err_callback);
 +    tcp_sent(net_ctx.sockets[client_index].pcb.tcp, tcp_sent_callback);
 +    tcp_recv(net_ctx.sockets[client_index].pcb.tcp, tcp_recv_callback);
++
++    /* Mark the socket as active */
++    net_ctx.active_connection_bitfield |= (1ULL << client_index);
 +
 +    return ERR_OK;
 +}
