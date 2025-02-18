@@ -3,4 +3,5 @@
     "search.useParentIgnoreFiles": false,
     "search.useIgnoreFiles": false,
     "rust-analyzer.cargo.targetDir": "build/cargo",
+    "editor.formatOnSave": true
 }

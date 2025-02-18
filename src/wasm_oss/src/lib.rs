@@ -1,61 +1,21 @@
 mod asyncio;
+mod dns;
 mod ffi;
 mod logging;
 mod lwip_error;
 mod panic;
-
 use std::{cell::RefCell, rc::Rc};
 
-use asyncio::{get_keypress, sleep_ms, tcp::TcpSocket};
+use asyncio::{embedded_nal_async::TcpStream, get_keypress, sleep_ms, tcp::TcpSocket};
+use dns::StaticDns;
 use log::info;
 use logging::init_with_level;
+use reqwless::{
+    client::HttpClient,
+    headers::ContentType,
+    request::{Method, RequestBuilder},
+};
 use simple_async_local_executor::Executor;
-
-fn mainloop(executor: Executor) {
-    executor.clone().spawn(async move {
-        info!("Connecting to server");
-        let socket = TcpSocket::create().await;
-
-        if socket.is_err() {
-            log::error!("Failed to create socket: {}", socket.err().unwrap());
-            return;
-        }
-
-        let mut socket = socket.unwrap();
-
-        let result = socket.connect("192.168.1.120", 8080).await;
-
-        if result.is_err() {
-            log::error!("Failed to connect to server: {}", result.err().unwrap());
-            return;
-        }
-
-        let socket_2 = socket.clone();
-
-        executor.clone().spawn(async move {
-            loop {
-                let result = socket_2.write(b"Hello from WASM!\n").await;
-
-                if result.is_err() {
-                    log::error!("Failed to write to socket: {}", result.err().unwrap());
-                    return;
-                }
-                sleep_ms(1000).await;
-            }
-        });
-
-        loop {
-            let result = socket.read(2).await;
-            if result.is_err() {
-                log::error!("Failed to read from socket: {}", result.err().unwrap());
-                return;
-            }
-
-            let buf = result.unwrap();
-            log::info!("Read {} bytes: {:?}", buf.len(), buf);
-        }
-    });
-}
 
 fn mainloop_2(executor: Executor) {
     executor.clone().spawn(async move {
@@ -96,8 +56,22 @@ fn mainloop_2(executor: Executor) {
 
             let buf = result.unwrap();
             log::info!("Read {} bytes: {:?}", buf.len(), buf);
+        }
+    });
+}
 
-            client_socket.close().await;
+fn mainloop_3(executor: Executor) {
+    executor.clone().spawn(async move {
+        loop {
+            let url = format!("http://192.168.1.120:8081");
+            let binding = TcpStream::default();
+            let mut client = HttpClient::new(&binding, &StaticDns);
+            let mut rx_buf = [0; 4096];
+            let mut request = client.request(Method::GET, &url).await.unwrap();
+            let response = request.send(&mut rx_buf).await.unwrap();
+            let body = response.body().read_to_end().await.unwrap();
+            let body_str = String::from_utf8(body.to_vec()).unwrap();
+            log::info!("Response: {:?}", body_str);
         }
     });
 }
@@ -118,11 +92,11 @@ pub extern "C" fn main() {
     // mainloop(executor.clone());
     let exit_2 = exit.clone();
     executor.spawn(async move {
-        sleep_ms(100000).await;
+        sleep_ms(10000).await;
         *exit_2.borrow_mut() = true;
     });
 
-    mainloop_2(executor.clone());
+    mainloop_3(executor.clone());
 
     loop {
         // TODO: Make some kind of reactor design, to handle this more modularly

@@ -1,3 +1,4 @@
+pub mod embedded_nal_async;
 pub mod keyboard;
 pub mod sleep;
 pub mod tcp;

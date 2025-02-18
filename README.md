@@ -12,7 +12,6 @@ To speed up builds using ccache, you can start Redis with `u-boot-redis-up`, the
 
 
 ## TODO:
-- implement bind, listen, accept for tcp
 - convert tcp to netconn for dual udp, tcp support
 - create dns function on top of rustdns
 - support embedded_io_async and embedded_nal_async traits

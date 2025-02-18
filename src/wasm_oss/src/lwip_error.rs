@@ -1,5 +1,8 @@
-use std::fmt;
+use std::convert::Infallible;
 use std::error::Error;
+use std::fmt;
+
+use embedded_io::ErrorKind;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LwipError {
@@ -118,6 +121,30 @@ impl Error for LwipError {}
 /// Type alias for Result with LwipError as the error type
 pub type LwipResult<T> = Result<T, LwipError>;
 
+impl embedded_io::Error for LwipError {
+    fn kind(&self) -> ErrorKind {
+        match *self {
+            LwipError::Ok => ErrorKind::Other,
+            LwipError::OutOfMemory => ErrorKind::OutOfMemory,
+            LwipError::Buffer => ErrorKind::Other,
+            LwipError::Timeout => ErrorKind::TimedOut,
+            LwipError::Routing => ErrorKind::Other,
+            LwipError::InProgress => ErrorKind::Other,
+            LwipError::InvalidValue => ErrorKind::InvalidData,
+            LwipError::WouldBlock => ErrorKind::Other,
+            LwipError::AddressInUse => ErrorKind::AddrInUse,
+            LwipError::AlreadyConnecting => ErrorKind::Other,
+            LwipError::AlreadyConnected => ErrorKind::Other,
+            LwipError::NotConnected => ErrorKind::NotConnected,
+            LwipError::NetworkInterface => ErrorKind::Other,
+            LwipError::ConnectionAborted => ErrorKind::ConnectionAborted,
+            LwipError::ConnectionReset => ErrorKind::ConnectionReset,
+            LwipError::ConnectionClosed => ErrorKind::NotConnected,
+            LwipError::IllegalArgument => ErrorKind::InvalidInput,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,9 +157,6 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        assert_eq!(
-            LwipError::OutOfMemory.to_string(),
-            "Out of memory error"
-        );
+        assert_eq!(LwipError::OutOfMemory.to_string(), "Out of memory error");
     }
 }
