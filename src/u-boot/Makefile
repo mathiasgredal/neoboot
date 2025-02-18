@@ -11,9 +11,9 @@ U_BOOT_DIR    						?= $(SRC_DIR)/u-boot
 U_BOOT_PATCH_DIR    				?= $(U_BOOT_DIR)/patches
 U_BOOT_VENDOR_DIR   				?= $(VENDOR_DIR)/u-boot
 
-DOCKER_RUN	  						?= $(DOCKER) run -it --rm --privileged -v $(DIST_DIR)/wasm_oss:/tftpboot
+DOCKER_RUN	  						?= $(DOCKER) run -it --rm --privileged -v $(DIST_DIR)/wasm_oss:/tftpboot -p 8080:8080
 DOCKER_BUILD 	   					?= $(DOCKER) build --net host
-QEMU_OPTS 							?= -m 1g -nographic -netdev user,id=net0,tftp=/tftpboot -device e1000,netdev=net0
+QEMU_OPTS 							?= -m 1g -nographic -netdev user,id=net0,tftp=/tftpboot,hostfwd=tcp::8080-:8080 -device e1000,netdev=net0 
 
 U_BOOT_TAG_BASE         			?= $(PROJECT_NAME)/u-boot
 U_BOOT_ARM_IMAGE_TAG      			?= $(U_BOOT_TAG_BASE):arm-${VERSION}
@@ -54,11 +54,11 @@ u-boot-patches: ## Generate patches from u-boot vendor directory
 
 u-boot-ide: u-boot-patches u-boot-vendor ## Make u-boot compile-commands.json for IDE
 	@printf "$(COLOR_BLUE)🚀 Generating compile-commands.json for U-Boot...$(COLOR_RESET)\n"
-	@$(DOCKER) build -f $(U_BOOT_DIR)/Dockerfile --target compile-commands -t $(U_BOOT_COMPILE_COMMANDS_TAG) \
+	@$(DOCKER) build -f $(U_BOOT_DIR)/Dockerfile --target compile-commands -t $(U_BOOT_COMPILE_COMMANDS_IMAGE_TAG) \
 		--build-arg U_BOOT_ARCHIVE="$(U_BOOT_ARCHIVE)" \
 		--build-arg DEFCONFIG=qemu_arm64_lwip_defconfig \
 		$(U_BOOT_DIR) && \
-	$(DOCKER) run -it --rm --privileged $(U_BOOT_COMPILE_COMMANDS_TAG) \
+	$(DOCKER) run -it --rm --privileged $(U_BOOT_COMPILE_COMMANDS_IMAGE_TAG) \
 		cat /u-boot/compile_commands.json | \
 		sed -e 's#-nostdinc##g' \
 			-e 's#-flto=4##g' \

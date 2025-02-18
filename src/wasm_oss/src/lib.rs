@@ -14,14 +14,22 @@ use simple_async_local_executor::Executor;
 fn mainloop(executor: Executor) {
     executor.clone().spawn(async move {
         info!("Connecting to server");
-        let socket = TcpSocket::connect("192.168.1.120", 8080).await;
+        let socket = TcpSocket::create().await;
 
         if socket.is_err() {
-            log::error!("Failed to connect to server: {}", socket.err().unwrap());
+            log::error!("Failed to create socket: {}", socket.err().unwrap());
             return;
         }
 
-        let socket = socket.unwrap();
+        let mut socket = socket.unwrap();
+
+        let result = socket.connect("192.168.1.120", 8080).await;
+
+        if result.is_err() {
+            log::error!("Failed to connect to server: {}", result.err().unwrap());
+            return;
+        }
+
         let socket_2 = socket.clone();
 
         executor.clone().spawn(async move {
@@ -49,6 +57,49 @@ fn mainloop(executor: Executor) {
     });
 }
 
+fn mainloop_2(executor: Executor) {
+    executor.clone().spawn(async move {
+        let socket = TcpSocket::create().await;
+        if socket.is_err() {
+            log::error!("Failed to create socket: {}", socket.err().unwrap());
+            return;
+        }
+
+        let mut socket = socket.unwrap();
+
+        let result = socket.bind("0.0.0.0", 8080).await;
+        if result.is_err() {
+            log::error!("Failed to bind to socket: {}", result.err().unwrap());
+            return;
+        }
+
+        let result = socket.listen(10).await;
+        if result.is_err() {
+            log::error!("Failed to listen on socket: {}", result.err().unwrap());
+            return;
+        }
+
+        loop {
+            let result = socket.accept().await;
+            if result.is_err() {
+                log::error!("Failed to accept connection: {}", result.err().unwrap());
+                return;
+            }
+
+            let client_socket = result.unwrap();
+
+            let result = client_socket.read(1024).await;
+            if result.is_err() {
+                log::error!("Failed to read from socket: {}", result.err().unwrap());
+                return;
+            }
+
+            let buf = result.unwrap();
+            log::info!("Read {} bytes: {:?}", buf.len(), buf);
+        }
+    });
+}
+
 #[no_mangle]
 pub extern "C" fn main() {
     panic::set_once();
@@ -61,15 +112,14 @@ pub extern "C" fn main() {
     }
     let exit: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
 
-
     // mainloop(executor.clone());
     let exit_2 = exit.clone();
     executor.spawn(async move {
-        sleep_ms(10000).await;
+        sleep_ms(1000000).await;
         *exit_2.borrow_mut() = true;
     });
 
-    mainloop(executor.clone());
+    mainloop_2(executor.clone());
 
     loop {
         // TODO: Make some kind of reactor design, to handle this more modularly
