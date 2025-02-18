@@ -1,21 +1,22 @@
-From af4415a62695311ba8150c7ebc5a0eb415f7f231 Mon Sep 17 00:00:00 2001
+From 0c7f392bdf921205727366ff271c920925ab6a4a Mon Sep 17 00:00:00 2001
 From: Mathias Gredal <mathiasgredal@icloud.com>
 Date: Sat, 8 Feb 2025 07:35:07 +0100
 Subject: [PATCH 10/10] Testing
 
 ---
- cmd/wasm.c                     | 664 +--------------------------------
- include/wasm_ffi/wasm_ffi.h    |  20 +
- include/wasm_ffi/wasm_net.h    |  43 +++
- include/wasm_ffi/wasm_socket.h | 183 +++++++++
- include/wasm_ffi/wasm_sys.h    |  56 +++
- lib/Makefile                   |   2 +-
- lib/wasm_ffi/Makefile          |   5 +
- lib/wasm_ffi/wasm_ffi.c        |  53 +++
- lib/wasm_ffi/wasm_net.c        | 205 ++++++++++
- lib/wasm_ffi/wasm_socket.c     | 560 +++++++++++++++++++++++++++
- lib/wasm_ffi/wasm_sys.c        |  55 +++
- 11 files changed, 1185 insertions(+), 661 deletions(-)
+ cmd/wasm.c                      | 664 +-------------------------------
+ configs/qemu-x86_wasm_defconfig |   1 -
+ include/wasm_ffi/wasm_ffi.h     |  20 +
+ include/wasm_ffi/wasm_net.h     |  44 +++
+ include/wasm_ffi/wasm_socket.h  | 183 +++++++++
+ include/wasm_ffi/wasm_sys.h     |  56 +++
+ lib/Makefile                    |   2 +-
+ lib/wasm_ffi/Makefile           |   5 +
+ lib/wasm_ffi/wasm_ffi.c         |  54 +++
+ lib/wasm_ffi/wasm_net.c         | 212 ++++++++++
+ lib/wasm_ffi/wasm_socket.c      | 660 +++++++++++++++++++++++++++++++
+ lib/wasm_ffi/wasm_sys.c         |  55 +++
+ 12 files changed, 1294 insertions(+), 662 deletions(-)
  create mode 100644 include/wasm_ffi/wasm_ffi.h
  create mode 100644 include/wasm_ffi/wasm_net.h
  create mode 100644 include/wasm_ffi/wasm_socket.h
@@ -715,6 +716,19 @@ index 45bab732..2e3ba66c 100644
  
      /* Locate the "main" function within the WASM module */
      IM3Function function = NULL;
+diff --git a/configs/qemu-x86_wasm_defconfig b/configs/qemu-x86_wasm_defconfig
+index e811f083..a53cfa21 100644
+--- a/configs/qemu-x86_wasm_defconfig
++++ b/configs/qemu-x86_wasm_defconfig
+@@ -1,7 +1,6 @@
+ #include <configs/qemu-x86_defconfig>
+ 
+ CONFIG_WASM=y
+-
+ CONFIG_BOOTCOMMAND="setenv serverip 10.0.2.2; setenv ipaddr 10.0.2.15; setenv netmask 255.255.255.0; tftpboot $loadaddr main.wasm; dhcp; wasm $loadaddr $filesize" 
+ CONFIG_SYS_MALLOC_LEN=0x10000000
+ SYS_MALLOC_CLEAR_ON_INIT=n
+\ No newline at end of file
 diff --git a/include/wasm_ffi/wasm_ffi.h b/include/wasm_ffi/wasm_ffi.h
 new file mode 100644
 index 00000000..355ea352
@@ -743,10 +757,10 @@ index 00000000..355ea352
 +#endif /* __WASM_FFI_H__ */
 diff --git a/include/wasm_ffi/wasm_net.h b/include/wasm_ffi/wasm_net.h
 new file mode 100644
-index 00000000..68f41822
+index 00000000..66461706
 --- /dev/null
 +++ b/include/wasm_ffi/wasm_net.h
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,44 @@
 +// SPDX-License-Identifier: GPL-2.0+
 +/*
 + * Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
@@ -777,7 +791,8 @@ index 00000000..68f41822
 +m3ApiRawFunction(net_rx);
 +
 +/* Bindings to all functions in wasm_socket.h */
-+m3ApiRawFunction(net_socket_new_ffi);
++m3ApiRawFunction(net_socket_new_tcp_ffi);
++m3ApiRawFunction(net_socket_new_udp_ffi);
 +m3ApiRawFunction(net_socket_free_ffi);
 +m3ApiRawFunction(net_socket_connect_ffi);
 +m3ApiRawFunction(net_socket_connect_poll_ffi);
@@ -792,7 +807,7 @@ index 00000000..68f41822
 +#endif /* __WASM_NET_H__ */
 diff --git a/include/wasm_ffi/wasm_socket.h b/include/wasm_ffi/wasm_socket.h
 new file mode 100644
-index 00000000..b8342287
+index 00000000..bff18984
 --- /dev/null
 +++ b/include/wasm_ffi/wasm_socket.h
 @@ -0,0 +1,183 @@
@@ -879,7 +894,7 @@ index 00000000..b8342287
 + *
 + * @return: error code or socket index
 + */
-+err_t net_socket_new();
++err_t net_socket_new(enum conn_type_t conn_type);
 +
 +/**
 + * net_socket_get() - get a network socket by index.
@@ -1069,10 +1084,10 @@ index 00000000..e50f90ee
 \ No newline at end of file
 diff --git a/lib/wasm_ffi/wasm_ffi.c b/lib/wasm_ffi/wasm_ffi.c
 new file mode 100644
-index 00000000..005e8d11
+index 00000000..c8686b3a
 --- /dev/null
 +++ b/lib/wasm_ffi/wasm_ffi.c
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,54 @@
 +// SPDX-License-Identifier: GPL-2.0+
 +/*
 + * Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
@@ -1113,7 +1128,8 @@ index 00000000..005e8d11
 +    LINK_RAW_FUNCTION(module, "env_net_rx", "i()", &net_rx);
 +
 +    /* Socket functions */
-+    LINK_RAW_FUNCTION(module, "env_net_socket_new", "i()", &net_socket_new_ffi);
++    LINK_RAW_FUNCTION(module, "env_net_socket_new_tcp", "i()", &net_socket_new_tcp_ffi);
++    LINK_RAW_FUNCTION(module, "env_net_socket_new_udp", "i()", &net_socket_new_udp_ffi);
 +    LINK_RAW_FUNCTION(module, "env_net_socket_free", "i(i)", &net_socket_free_ffi);
 +    LINK_RAW_FUNCTION(module, "env_net_socket_connect", "i(iii)", &net_socket_connect_ffi);
 +    LINK_RAW_FUNCTION(module, "env_net_socket_connect_poll", "i(i)", &net_socket_connect_poll_ffi);
@@ -1129,10 +1145,10 @@ index 00000000..005e8d11
 \ No newline at end of file
 diff --git a/lib/wasm_ffi/wasm_net.c b/lib/wasm_ffi/wasm_net.c
 new file mode 100644
-index 00000000..08380b4f
+index 00000000..eea056ff
 --- /dev/null
 +++ b/lib/wasm_ffi/wasm_net.c
-@@ -0,0 +1,205 @@
+@@ -0,0 +1,212 @@
 +// SPDX-License-Identifier: GPL-2.0+
 +/*
 + * Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
@@ -1243,10 +1259,17 @@ index 00000000..08380b4f
 +}
 +
 +/* Bindings to all functions in wasm_socket.h */
-+m3ApiRawFunction(net_socket_new_ffi)
++m3ApiRawFunction(net_socket_new_tcp_ffi)
 +{
 +    m3ApiReturnType(int32_t);
-+    err_t err = net_socket_new();
++    err_t err = net_socket_new(CONN_TCP);
++    m3ApiReturn(err);
++}
++
++m3ApiRawFunction(net_socket_new_udp_ffi)
++{
++    m3ApiReturnType(int32_t);
++    err_t err = net_socket_new(CONN_UDP);
 +    m3ApiReturn(err);
 +}
 +
@@ -1340,18 +1363,20 @@ index 00000000..08380b4f
 +}
 diff --git a/lib/wasm_ffi/wasm_socket.c b/lib/wasm_ffi/wasm_socket.c
 new file mode 100644
-index 00000000..b6de9a5e
+index 00000000..d7364790
 --- /dev/null
 +++ b/lib/wasm_ffi/wasm_socket.c
-@@ -0,0 +1,560 @@
+@@ -0,0 +1,660 @@
 +// SPDX-License-Identifier: GPL-2.0+
 +/*
 + * Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
 + */
 +
++#include "lwip/pbuf.h"
 +#include <lwip/api.h>
 +#include <lwip/err.h>
 +#include <lwip/tcp.h>
++#include <lwip/udp.h>
 +#include <stdio.h>
 +#include <wasm_ffi/wasm_socket.h>
 +
@@ -1510,10 +1535,33 @@ index 00000000..b6de9a5e
 +    return ERR_OK;
 +}
 +
-+err_t net_socket_new(void)
++static void udp_recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *p,
++    const ip_addr_t *addr, u16_t port)
 +{
-+    enum conn_type_t conn_type = CONN_TCP;
++    int8_t index = (int8_t)(uintptr_t)arg;
 +
++    printf("udp_recv_callback: index = %d, addr = %s, port = %d\n", index, ipaddr_ntoa(addr), port);
++
++    /* Get the socket */
++    net_socket_t *sock = net_socket_get(index);
++    if (!sock)
++    {
++        return;
++    }
++
++    /* Append the received data to the socket's receive buffer if the IP and port match */
++    if (sock->recv_buffer != NULL)
++    {
++        pbuf_cat(sock->recv_buffer, p);
++    }
++    else
++    {
++        sock->recv_buffer = p;
++    }
++}
++
++err_t net_socket_new(enum conn_type_t conn_type)
++{
 +    /* Find first free socket slot */
 +    int8_t index = net_socket_find_free_slot();
 +
@@ -1541,6 +1589,16 @@ index 00000000..b6de9a5e
 +        tcp_err(net_ctx.sockets[index].pcb.tcp, tcp_err_callback);
 +        tcp_sent(net_ctx.sockets[index].pcb.tcp, tcp_sent_callback);
 +        tcp_recv(net_ctx.sockets[index].pcb.tcp, tcp_recv_callback);
++        break;
++    case CONN_UDP:
++        net_ctx.sockets[index].pcb.udp = udp_new_ip_type(IPADDR_TYPE_V4);
++        if (!net_ctx.sockets[index].pcb.udp)
++        {
++            return ERR_MEM;
++        }
++
++        /* Set callbacks */
++        udp_recv(net_ctx.sockets[index].pcb.udp, udp_recv_callback, (void *)(uintptr_t)index);
 +        break;
 +    default:
 +        return ERR_ARG;
@@ -1589,9 +1647,12 @@ index 00000000..b6de9a5e
 +        }
 +        break;
 +    }
++    case CONN_UDP: {
++        udp_remove(sock->pcb.udp);
++        break;
++    }
 +    default:
 +        printf("net_socket_free: unknown socket type\n");
-+        break;
 +    }
 +
 +    /* Free receive buffer if any */
@@ -1624,6 +1685,14 @@ index 00000000..b6de9a5e
 +    {
 +    case CONN_TCP: {
 +        err_t err = tcp_connect(sock->pcb.tcp, &ip_addr, port, tcp_connect_callback);
++        if (err != ERR_OK)
++        {
++            return err;
++        }
++        break;
++    }
++    case CONN_UDP: {
++        err_t err = udp_connect(sock->pcb.udp, &ip_addr, port);
 +        if (err != ERR_OK)
 +        {
 +            return err;
@@ -1691,6 +1760,14 @@ index 00000000..b6de9a5e
 +    {
 +    case CONN_TCP: {
 +        err_t err = tcp_bind(sock->pcb.tcp, &ip_addr, port);
++        if (err != ERR_OK)
++        {
++            return err;
++        }
++        break;
++    }
++    case CONN_UDP: {
++        err_t err = udp_bind(sock->pcb.udp, &ip_addr, port);
 +        if (err != ERR_OK)
 +        {
 +            return err;
@@ -1822,7 +1899,7 @@ index 00000000..b6de9a5e
 +    }
 +
 +    /* Check if the socket is connected */
-+    if (!sock->is_connected)
++    if (sock->type == CONN_TCP && !sock->is_connected)
 +    {
 +        return ERR_CLSD;
 +    }
@@ -1849,6 +1926,7 @@ index 00000000..b6de9a5e
 +    return read_len;
 +}
 +
++
 +err_t net_socket_write(int8_t index, const void *buffer, uint32_t length)
 +{
 +    /* Get the socket */
@@ -1858,24 +1936,58 @@ index 00000000..b6de9a5e
 +        return ERR_ARG;
 +    }
 +
-+    /* Check if the socket is connected */
-+    if (!sock->is_connected)
-+    {
-+        return ERR_CLSD;
-+    }
-+
 +    /* Send data to the socket */
-+    err_t err = tcp_write(sock->pcb.tcp, buffer, length, TCP_WRITE_FLAG_COPY);
-+    if (err != ERR_OK)
++    switch (sock->type)
 +    {
-+        return err;
-+    }
++    case CONN_TCP: {
++        /* Check if the socket is connected */
++        if (!sock->is_connected)
++        {
++            return ERR_CLSD;
++        }
 +
-+    /* Flush the output buffer */
-+    err = tcp_output(sock->pcb.tcp);
-+    if (err != ERR_OK)
-+    {
-+        return err;
++        /* Write the data to the socket */
++        err_t err = tcp_write(sock->pcb.tcp, buffer, length, TCP_WRITE_FLAG_COPY);
++        if (err != ERR_OK)
++        {
++            return err;
++        }
++
++        /* Flush the output buffer */
++        err = tcp_output(sock->pcb.tcp);
++        if (err != ERR_OK)
++        {
++            return err;
++        }
++        sock->total_bytes_sent += length;
++        break;
++    }
++    case CONN_UDP: {
++        err_t err;
++        struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, length, PBUF_RAM);
++        if (!p)
++        {
++            return ERR_MEM;
++        }
++        err = pbuf_take(p, buffer, length);
++        if (err != ERR_OK)
++        {
++            pbuf_free(p);
++            return err;
++        }
++        err = udp_send(sock->pcb.udp, p);
++        if (err != ERR_OK)
++        {
++            pbuf_free(p);
++            return err;
++        }
++        pbuf_free(p);
++        sock->total_bytes_sent += length;
++        sock->acknowledged_bytes_sent += length;
++        break;
++    }
++    default:
++        return ERR_ARG;
 +    }
 +
 +    return ERR_OK;
@@ -1890,16 +2002,27 @@ index 00000000..b6de9a5e
 +        return ERR_ARG;
 +    }
 +
-+    /* Check if the socket is connected */
-+    if (!sock->is_connected)
++    switch (sock->type)
 +    {
-+        return ERR_CLSD;
-+    }
++    case CONN_TCP: {
++        /* Check if the socket is connected */
++        if (!sock->is_connected)
++        {
++            return ERR_CLSD;
++        }
 +
-+    /* Check if all data has been acknowledged */
-+    if (sock->acknowledged_bytes_sent < sock->total_bytes_sent)
-+    {
-+        return ERR_WOULDBLOCK;
++        /* Check if all data has been acknowledged */
++        if (sock->acknowledged_bytes_sent < sock->total_bytes_sent)
++        {
++            return ERR_WOULDBLOCK;
++        }
++        break;
++    }
++    case CONN_UDP: {
++        break;
++    }
++    default:
++        return ERR_ARG;
 +    }
 +
 +    return ERR_OK;

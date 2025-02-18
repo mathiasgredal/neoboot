@@ -13,7 +13,8 @@ unsafe extern "C" {
     // pub fn env_used_sockets() -> i32;
 
     // Socket
-    pub fn env_net_socket_new() -> i32;
+    pub fn env_net_socket_new_tcp() -> i32;
+    pub fn env_net_socket_new_udp() -> i32;
     pub fn env_net_socket_free(socket: i32) -> i32;
     pub fn env_net_socket_connect(socket: i32, addr: u32, port: u32) -> i32;
     pub fn env_net_socket_connect_poll(socket: i32) -> i32;

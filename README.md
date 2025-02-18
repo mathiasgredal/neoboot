@@ -10,8 +10,12 @@ If you want to make any changes to the U-Boot source code, it can be helpful to 
 
 To speed up builds using ccache, you can start Redis with `u-boot-redis-up`, the build system will automatically start using it, if your environment is set up correctly.
 
+## Wasm
+Designed like Novel Netware
+
 
 ## TODO:
+- check that env_net_setup has been called
 - convert tcp to netconn for dual udp, tcp support
 - create dns function on top of rustdns
 - support embedded_io_async and embedded_nal_async traits
