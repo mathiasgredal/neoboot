@@ -1,18 +1,13 @@
-use std::net::IpAddr;
+use super::{socket::Socket, tcp::TcpSocket, udp::UdpSocket};
+use crate::lwip_error::LwipError;
 
-use log::info;
-
-use crate::{ffi, lwip_error::LwipError};
-
-use super::tcp;
-
-impl embedded_io_async::ErrorType for tcp::Socket {
+impl embedded_io_async::ErrorType for Socket {
     type Error = LwipError;
 }
 
-impl embedded_io_async::Read for tcp::Socket {
+impl embedded_io_async::Read for Socket {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
-        let result = tcp::Socket::read(self, buf.len() as u16).await;
+        let result = Socket::read(self, buf.len() as u16).await;
         if result.is_err() {
             return Err(result.err().unwrap().into());
         }
@@ -23,9 +18,9 @@ impl embedded_io_async::Read for tcp::Socket {
     }
 }
 
-impl embedded_io_async::Write for tcp::Socket {
+impl embedded_io_async::Write for Socket {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        let result = tcp::Socket::write(self, buf).await;
+        let result = Socket::write(self, buf).await;
         if result.is_err() {
             return Err(result.err().unwrap().into());
         }
@@ -34,16 +29,16 @@ impl embedded_io_async::Write for tcp::Socket {
     }
 }
 
-impl embedded_nal_async::TcpConnect for tcp::TcpSocket {
+impl embedded_nal_async::TcpConnect for TcpSocket {
     type Error = LwipError;
 
-    type Connection<'a> = tcp::Socket;
+    type Connection<'a> = Socket;
 
     async fn connect<'a>(
         &'a self,
         remote: std::net::SocketAddr,
     ) -> Result<Self::Connection<'a>, Self::Error> {
-        let socket = tcp::TcpSocket::create();
+        let socket = TcpSocket::create();
         if socket.is_err() {
             let err = socket.err().unwrap();
             return Err(err.into());
@@ -62,15 +57,13 @@ impl embedded_nal_async::TcpConnect for tcp::TcpSocket {
     }
 }
 
-impl embedded_nal_async::ConnectedUdp for tcp::UdpSocket {
+impl embedded_nal_async::ConnectedUdp for UdpSocket {
     type Error = LwipError;
 
     async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-        info!("Sending data: {:?}", data);
-        let result = tcp::Socket::write(&mut self.socket.borrow_mut(), data).await;
+        let result = Socket::write(&mut self.socket.borrow_mut(), data).await;
         if result.is_err() {
             let err = result.err().unwrap();
-            info!("Error sending: {:?}", err);
             return Err(err.into());
         }
 
@@ -78,10 +71,9 @@ impl embedded_nal_async::ConnectedUdp for tcp::UdpSocket {
     }
 
     async fn receive_into(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
-        let result = tcp::Socket::read(&mut self.socket.borrow_mut(), buffer.len() as u16).await;
+        let result = Socket::read(&mut self.socket.borrow_mut(), buffer.len() as u16).await;
         if result.is_err() {
             let err = result.err().unwrap();
-            info!("Error receiving: {:?}", err);
             return Err(err.into());
         }
 
@@ -91,7 +83,7 @@ impl embedded_nal_async::ConnectedUdp for tcp::UdpSocket {
     }
 }
 
-impl embedded_nal_async::UnconnectedUdp for tcp::UdpSocket {
+impl embedded_nal_async::UnconnectedUdp for UdpSocket {
     type Error = LwipError;
 
     async fn send(
@@ -100,17 +92,15 @@ impl embedded_nal_async::UnconnectedUdp for tcp::UdpSocket {
         remote: std::net::SocketAddr,
         data: &[u8],
     ) -> Result<(), Self::Error> {
-        let result = tcp::UdpSocket::connect(self, remote.ip().to_string().as_str(), remote.port());
+        let result = UdpSocket::connect(self, remote.ip().to_string().as_str(), remote.port());
         if result.is_err() {
             return Err(result.err().unwrap().into());
         }
 
-        let result = tcp::Socket::write(&mut self.socket.borrow_mut(), data).await;
+        let result = Socket::write(&mut self.socket.borrow_mut(), data).await;
         if result.is_err() {
             return Err(result.err().unwrap().into());
         }
-
-        // TODO: Disconnect after sending
 
         Ok(())
     }
@@ -119,7 +109,7 @@ impl embedded_nal_async::UnconnectedUdp for tcp::UdpSocket {
         &mut self,
         buffer: &mut [u8],
     ) -> Result<(usize, std::net::SocketAddr, std::net::SocketAddr), Self::Error> {
-        let result = tcp::Socket::read(&mut self.socket.borrow_mut(), buffer.len() as u16).await;
+        let result = Socket::read(&mut self.socket.borrow_mut(), buffer.len() as u16).await;
         if result.is_err() {
             return Err(result.err().unwrap().into());
         }
@@ -134,30 +124,28 @@ impl embedded_nal_async::UnconnectedUdp for tcp::UdpSocket {
     }
 }
 
-impl embedded_nal_async::UdpStack for tcp::UdpSocket {
+impl embedded_nal_async::UdpStack for UdpSocket {
     type Error = LwipError;
 
-    type Connected = tcp::UdpSocket;
+    type Connected = UdpSocket;
 
-    type UniquelyBound = tcp::UdpSocket;
+    type UniquelyBound = UdpSocket;
 
-    type MultiplyBound = tcp::UdpSocket;
+    type MultiplyBound = UdpSocket;
 
     async fn connect_from(
         &self,
         local: std::net::SocketAddr,
         remote: std::net::SocketAddr,
     ) -> Result<(std::net::SocketAddr, Self::Connected), Self::Error> {
-        info!("Connecting from {:?} to {:?}", local, remote);
-        let result = tcp::UdpSocket::bind(self, local.ip().to_string().as_str(), local.port());
+        let result = UdpSocket::bind(self, local.ip().to_string().as_str(), local.port());
         if result.is_err() {
             return Err(result.err().unwrap().into());
         }
 
-        let result = tcp::UdpSocket::connect(self, remote.ip().to_string().as_str(), remote.port());
+        let result = UdpSocket::connect(self, remote.ip().to_string().as_str(), remote.port());
         if result.is_err() {
             let err = result.err().unwrap();
-            info!("Error connecting: {:?}", err);
             return Err(err.into());
         }
 
@@ -168,7 +156,7 @@ impl embedded_nal_async::UdpStack for tcp::UdpSocket {
         &self,
         local: std::net::SocketAddr,
     ) -> Result<(std::net::SocketAddr, Self::UniquelyBound), Self::Error> {
-        let result = tcp::UdpSocket::bind(self, local.ip().to_string().as_str(), local.port());
+        let result = UdpSocket::bind(self, local.ip().to_string().as_str(), local.port());
         if result.is_err() {
             return Err(result.err().unwrap().into());
         }
@@ -180,7 +168,7 @@ impl embedded_nal_async::UdpStack for tcp::UdpSocket {
         &self,
         local: std::net::SocketAddr,
     ) -> Result<Self::MultiplyBound, Self::Error> {
-        let result = tcp::UdpSocket::bind(self, local.ip().to_string().as_str(), local.port());
+        let result = UdpSocket::bind(self, local.ip().to_string().as_str(), local.port());
         if result.is_err() {
             return Err(result.err().unwrap().into());
         }

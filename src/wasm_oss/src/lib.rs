@@ -1,27 +1,15 @@
 mod asyncio;
-mod dns;
 mod ffi;
 mod logging;
 mod lwip_error;
 mod panic;
-use std::{
-    cell::RefCell,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    rc::Rc,
-};
+mod util;
+use std::{cell::RefCell, rc::Rc};
 
-use asyncio::{
-    get_keypress, sleep_ms,
-    tcp::{self, TcpSocket, UdpSocket},
-};
-use dns::ItsDns;
+use asyncio::{get_keypress, http::client::Client, sleep_ms, tcp::TcpSocket};
+use futures_lite::StreamExt;
 use log::info;
 use logging::init_with_level;
-use reqwless::{
-    client::HttpClient,
-    headers::ContentType,
-    request::{Method, RequestBuilder},
-};
 use simple_async_local_executor::Executor;
 
 fn mainloop_2(executor: Executor) {
@@ -99,43 +87,30 @@ fn mainloop_3(executor: Executor) {
         // }
 
         // sleep_ms(5000).await;
-
-        let nameserver: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53);
-        let stack = tcp::UdpSocket::create();
-        if stack.is_err() {
-            log::error!("Failed to create stack: {}", stack.err().unwrap());
+        // let http_client = HttpClient::new();
+        // let result = http_client.get("http://example.com").await;
+        // if result.is_err() {
+        //     log::error!("Failed to get from socket: {:?}", result.err().unwrap());
+        //     return;
+        // }
+        // let body = result.unwrap().collect::<Vec<_>>().await;
+        // for chunk in body {
+        //     log::info!("Chunk: {} bytes", chunk.unwrap().len());
+        // }
+        // log::info!("Response: {} bytes", body.len());
+        let mut client = Client::new();
+        let result = client.get("http://example.com").await;
+        if result.is_err() {
+            log::error!("Failed to get from socket: {:?}", result.err().unwrap());
             return;
         }
 
-        let stack = stack.unwrap();
-        let client = ItsDns::new(stack, nameserver);
-
-        let host = "example.com";
-        println!("Resolving {}...", host);
-        let ip = client
-            .get_host_by_name(host, embedded_nal_async::AddrType::IPv4)
-            .await;
-
-        let ip = ip.unwrap();
-
-        info!("Resolved {} to {}", host, ip);
-        // loop {
-        //     let url = format!("http://192.168.1.120:8081");
-        //     let binding = TcpSocket::create();
-        //     if binding.is_err() {
-        //         log::error!("Failed to create socket: {}", binding.err().unwrap());
-        //         return;
-        //     }
-
-        //     let binding = binding.unwrap();
-        //     let mut client = HttpClient::new(&binding, &StaticDns);
-        //     let mut rx_buf = [0; 4096];
-        //     let mut request = client.request(Method::GET, &url).await.unwrap();
-        //     let response = request.send(&mut rx_buf).await.unwrap();
-        //     let body = response.body().read_to_end().await.unwrap();
-        //     let body_str = String::from_utf8(body.to_vec()).unwrap();
-        //     log::info!("Response: {:?}", body_str);
-        // }
+        let body = result.unwrap().text().await;
+        if body.is_err() {
+            log::error!("Failed to get body: {:?}", body.err().unwrap());
+            return;
+        }
+        log::info!("Body: {}", body.unwrap());
     });
 }
 

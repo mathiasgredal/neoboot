@@ -1,6 +1,5 @@
 use core::sync::atomic::{AtomicU16, Ordering};
-use embedded_nal_async::{AddrType, ConnectedUdp, Dns, UdpStack};
-use log::info;
+use embedded_nal_async::{AddrType, ConnectedUdp, UdpStack};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -652,13 +651,13 @@ pub enum DnsError {
 }
 
 /// DNS client
-pub struct ItsDns<S: UdpStack> {
+pub struct Dns<S: UdpStack> {
     id: AtomicU16,
     stack: S,
     server: SocketAddr,
 }
 
-impl<S: UdpStack> ItsDns<S> {
+impl<S: UdpStack> Dns<S> {
     /// Create a new DNS client using the UDP stack and a DNS server.
     pub fn new(stack: S, server: SocketAddr) -> Self {
         Self {
@@ -718,7 +717,7 @@ impl<S: UdpStack> ItsDns<S> {
     }
 }
 
-impl<S: UdpStack> Dns for ItsDns<S> {
+impl<S: UdpStack> embedded_nal_async::Dns for Dns<S> {
     type Error = Error<S::Error>;
 
     async fn get_host_by_name(
@@ -726,7 +725,7 @@ impl<S: UdpStack> Dns for ItsDns<S> {
         host: &str,
         addr_type: AddrType,
     ) -> Result<IpAddr, Self::Error> {
-        ItsDns::get_host_by_name(self, host, addr_type).await
+        Dns::get_host_by_name(self, host, addr_type).await
     }
 
     async fn get_host_by_address(&self, _: IpAddr, _: &mut [u8]) -> Result<usize, Self::Error> {
