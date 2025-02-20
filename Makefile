@@ -23,7 +23,7 @@ include $(SRC_DIR)/wasm_oss/Makefile
 
 .PHONY: u-boot rust
 
-u-boot: u-boot-amend u-boot-patches wasm_oss_dist u-boot-x86_64-run
+u-boot: u-boot-amend u-boot-patches wasm_oss_dist u-boot-aarch64-run-host
 
 rust: wasm_oss_dist
 

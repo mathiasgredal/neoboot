@@ -13,7 +13,9 @@ U_BOOT_VENDOR_DIR   				?= $(VENDOR_DIR)/u-boot
 
 DOCKER_RUN	  						?= $(DOCKER) run -it --rm --privileged -v $(DIST_DIR)/wasm_oss:/tftpboot -p 8080:8080
 DOCKER_BUILD 	   					?= $(DOCKER) build --net host
-QEMU_OPTS 							?= -m 1g -nographic -netdev user,id=net0,tftp=/tftpboot,hostfwd=tcp::8080-:8080 -device e1000,netdev=net0 
+QEMU_SHARED_OPTS 					?= -m 1g -nographic
+QEMU_DOCKER_OPTS 					?= $(QEMU_SHARED_OPTS) -netdev user,id=net0,tftp=/tftpboot,hostfwd=tcp::8080-:8080
+QEMU_HOST_OPTS 						?= $(QEMU_SHARED_OPTS) -netdev user,id=net0,tftp=$(DIST_DIR)/wasm_oss,hostfwd=tcp::8080-:8080
 
 U_BOOT_TAG_BASE         			?= $(PROJECT_NAME)/u-boot
 U_BOOT_ARM_IMAGE_TAG      			?= $(U_BOOT_TAG_BASE):arm-${VERSION}
@@ -94,12 +96,15 @@ u-boot-aarch64-build:
 
 u-boot-aarch64-dist: u-boot-aarch64-build
 	@mkdir -p $(DIST_DIR)/u-boot/aarch64
-	@$(DOCKER) run -it --rm --privileged -v $(realpath .)/dist:/dist $(U_BOOT_AARCH64_IMAGE_TAG) \
-		cp -r /u-boot/. $(DIST_DIR)/u-boot/aarch64
+	@$(DOCKER) run -it --rm --privileged -v $(DIST_DIR):/dist $(U_BOOT_AARCH64_IMAGE_TAG) \
+		cp -r /u-boot/. /dist/u-boot/aarch64
 
-u-boot-aarch64-run: u-boot-aarch64-build
+u-boot-aarch64-run-docker: u-boot-aarch64-build
 	$(DOCKER_RUN) $(U_BOOT_AARCH64_IMAGE_TAG) \
-		qemu-system-aarch64 -machine virt -cpu cortex-a57 ${QEMU_OPTS} -bios /u-boot/u-boot.bin
+		qemu-system-aarch64 -machine virt -cpu cortex-a57 ${QEMU_DOCKER_OPTS} -device virtio-net,netdev=net0 -bios /u-boot/u-boot.bin
+
+u-boot-aarch64-run-host: u-boot-aarch64-dist
+	@qemu-system-aarch64 -machine virt -cpu cortex-a57 ${QEMU_HOST_OPTS} -device virtio-net,netdev=net0 -bios $(DIST_DIR)/u-boot/aarch64/u-boot.bin
 
 # ================================================
 #  U-Boot ARM                                    #
@@ -116,12 +121,15 @@ u-boot-arm-build:
 
 u-boot-arm-dist: u-boot-arm-build	
 	@mkdir -p $(DIST_DIR)/u-boot/arm
-	@$(DOCKER) run -it --rm --privileged -v $(realpath .)/dist:/dist $(U_BOOT_ARM_IMAGE_TAG) \
-		cp -r /u-boot/. $(DIST_DIR)/u-boot/arm
+	@$(DOCKER) run -it --rm --privileged -v $(DIST_DIR):/dist $(U_BOOT_ARM_IMAGE_TAG) \
+		cp -r /u-boot/. /dist/u-boot/arm
 
-u-boot-arm-run: u-boot-arm-build
+u-boot-arm-run-docker: u-boot-arm-build
 	$(DOCKER_RUN) $(U_BOOT_ARM_IMAGE_TAG) \
-		qemu-system-arm -machine virt ${QEMU_OPTS} -bios /u-boot/u-boot.bin
+		qemu-system-arm -machine virt ${QEMU_DOCKER_OPTS} -bios /u-boot/u-boot.bin
+
+u-boot-arm-run-host: u-boot-arm-dist
+	@qemu-system-arm -machine virt ${QEMU_HOST_OPTS} -bios $(DIST_DIR)/u-boot/arm/u-boot.bin
 
 # ================================================
 #  U-Boot x86_64                                 #
@@ -133,14 +141,17 @@ u-boot-x86_64-build:
 	$(DOCKER_BUILD) --target emulator -t $(U_BOOT_X86_64_IMAGE_TAG) \
 		--build-arg U_BOOT_ARCHIVE="$(U_BOOT_ARCHIVE)" \
 		--build-arg CROSS_COMPILE=x86_64-linux-gnu- \
-		--build-arg DEFCONFIG=qemu-x86_wasm_defconfig \
+		--build-arg DEFCONFIG=qemu-x86_64_wasm_defconfig \
 		$(U_BOOT_DIR)
 
 u-boot-x86_64-dist: u-boot-x86_64-build
 	@mkdir -p $(DIST_DIR)/u-boot/x86_64
-	@$(DOCKER) run -it --rm --privileged -v $(realpath .)/dist:/dist $(U_BOOT_X86_64_IMAGE_TAG) \
-		cp -r /u-boot/. $(DIST_DIR)/u-boot/x86_64
+	@$(DOCKER) run -it --rm --privileged -v $(DIST_DIR):/dist $(U_BOOT_X86_64_IMAGE_TAG) \
+		cp -r /u-boot/. /dist/u-boot/x86_64
 
-u-boot-x86_64-run: u-boot-x86_64-build
+u-boot-x86_64-run-docker: u-boot-x86_64-build
 	$(DOCKER_RUN) $(U_BOOT_X86_64_IMAGE_TAG) \
-		qemu-system-i386 ${QEMU_OPTS} -machine pc -bios /u-boot/u-boot.rom
+		qemu-system-x86_64 ${QEMU_DOCKER_OPTS} -device pcnet,netdev=net0 -machine pc -bios /u-boot/u-boot.rom
+
+u-boot-x86_64-run-host: u-boot-x86_64-dist
+	@qemu-system-x86_64 ${QEMU_HOST_OPTS} -device pcnet,netdev=net0 -machine pc -bios $(DIST_DIR)/u-boot/x86_64/u-boot.rom

@@ -13,7 +13,6 @@ To speed up builds using ccache, you can start Redis with `u-boot-redis-up`, the
 ## Wasm
 Designed like Novel Netware
 
-
 ## TODO:
 - check that env_net_setup has been called
 - convert tcp to netconn for dual udp, tcp support
@@ -22,6 +21,9 @@ Designed like Novel Netware
 - integrate with reqwless(reqwest) and picoserve(axum)
 - websockets using tungstenite
 - autobahn test suite
+- use flatbuffers to create an rpc protocol
+- make a python proxy client that communicates with the rpc server
+- make a pytest test suite using the proxy client
 - enhance performance using mio
 - create cli using shellfish with following commands:
     - stats
@@ -31,6 +33,11 @@ Designed like Novel Netware
 - ???
 - profit
 
+## Logbook
+
+### 2025-02-20
+My TCP bindings weren't slow, it was just that qemu's e1000 driver was slow. Using virtio-net instead of e1000 fixed the issue.
+I just wasted the entire day on this.
 
 
 

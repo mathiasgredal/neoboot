@@ -1,9 +1,7 @@
+use futures_lite::future::yield_now;
 use log::{error, info};
-use std::cell::RefCell;
 use std::future::Future;
-use std::net::Ipv4Addr;
 use std::pin::Pin;
-use std::rc::Rc;
 use std::task::{Context, Poll};
 
 use crate::ffi;
@@ -17,50 +15,53 @@ impl Socket {
     pub async fn read(&self, len: u16) -> Result<Vec<u8>, LwipError> {
         struct Read {
             socket: i32,
-            buf: Vec<u8>,
-            len: u16,
+            buf: Option<Vec<u8>>,
         }
 
         impl Future for Read {
             type Output = Result<Vec<u8>, LwipError>;
 
-            fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+            fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+                // SAFETY: FFI call to network stack
                 unsafe { ffi::env_net_rx() };
 
+                let buf = self
+                    .buf
+                    .as_ref()
+                    .expect("Buffer should exist during polling");
+
+                // SAFETY: We maintain exclusive control of the buffer until completion
                 let result = unsafe {
-                    ffi::env_net_socket_read(self.socket, self.buf.as_ptr(), self.len as u32)
+                    ffi::env_net_socket_read(self.socket, buf.as_ptr(), buf.len() as u32)
                 };
 
                 if result == LwipError::WouldBlock.to_code() {
                     return Poll::Pending;
                 }
 
+                let mut buf = self
+                    .buf
+                    .take()
+                    .expect("Buffer should exist for final result");
                 if result >= 0 {
-                    let ret_buf = self.buf.iter().take(result as usize).cloned().collect();
-                    return Poll::Ready(Ok(ret_buf));
+                    let bytes_read = result as usize;
+                    buf.truncate(bytes_read);
+                    Poll::Ready(Ok(buf))
+                } else {
+                    Poll::Ready(Err(LwipError::from_code(result)))
                 }
-
-                return Poll::Ready(Err(LwipError::from_code(result)));
             }
         }
 
-        // 1. Heap malloc len bytes
-        let buf: Vec<u8> = vec![0x0; len as usize];
+        yield_now().await;
 
-        // 2. Call env_socket_read
-        let result = Read {
+        let buffer = vec![0u8; len as usize];
+
+        Read {
             socket: self.socket,
-            buf,
-            len,
+            buf: Some(buffer),
         }
-        .await;
-
-        if result.is_err() {
-            return Err(result.err().unwrap());
-        }
-
-        // 3. If no error, return the read buffer
-        return Ok(result.unwrap());
+        .await
     }
 
     pub async fn write(&self, buf: &[u8]) -> Result<usize, LwipError> {

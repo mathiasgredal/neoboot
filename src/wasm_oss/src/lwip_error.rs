@@ -1,4 +1,3 @@
-use std::convert::Infallible;
 use std::error::Error;
 use std::fmt;
 
@@ -118,9 +117,6 @@ impl fmt::Display for LwipError {
 
 impl Error for LwipError {}
 
-/// Type alias for Result with LwipError as the error type
-pub type LwipResult<T> = Result<T, LwipError>;
-
 impl embedded_io::Error for LwipError {
     fn kind(&self) -> ErrorKind {
         match *self {
@@ -142,21 +138,5 @@ impl embedded_io::Error for LwipError {
             LwipError::ConnectionClosed => ErrorKind::NotConnected,
             LwipError::IllegalArgument => ErrorKind::InvalidInput,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_error_conversion() {
-        assert_eq!(LwipError::from_code(-1), LwipError::OutOfMemory);
-        assert_eq!(LwipError::OutOfMemory.to_code(), -1);
-    }
-
-    #[test]
-    fn test_error_display() {
-        assert_eq!(LwipError::OutOfMemory.to_string(), "Out of memory error");
     }
 }

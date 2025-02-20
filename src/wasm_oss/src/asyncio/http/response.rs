@@ -3,6 +3,7 @@ use crate::lwip_error::LwipError;
 use bytes::Bytes;
 use futures::StreamExt;
 use futures_lite::Stream;
+use log::info;
 use reqwless::{request::Method, Error};
 use serde_json::Value;
 use std::pin::Pin;
@@ -35,13 +36,23 @@ impl<'a> Response<'a> {
     ) -> Result<Self, LwipError> {
         let mut body_stream = Box::pin(body_stream);
         let metadata = body_stream.next().await;
-        if let Some(Ok(ResponseData::Metadata(metadata))) = metadata {
-            Ok(Self {
+
+        if metadata.is_none() {
+            return Err(LwipError::InvalidValue);
+        }
+
+        let metadata = metadata.unwrap();
+
+        match metadata {
+            Ok(ResponseData::Metadata(metadata)) => Ok(Self {
                 metadata,
                 body_stream: body_stream,
-            })
-        } else {
-            Err(LwipError::InvalidValue)
+            }),
+            Ok(ResponseData::Stream(_)) => Err(LwipError::InvalidValue),
+            Err(e) => {
+                info!("Error: {:?}", e);
+                Err(LwipError::InvalidValue)
+            }
         }
     }
 

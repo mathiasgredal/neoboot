@@ -1,22 +1,23 @@
-From 8b5fcb22be91f5d69f37511d12f961ad30d0ac3f Mon Sep 17 00:00:00 2001
+From f87d878bad9d3a27898efcb1a5e1754dd6982519 Mon Sep 17 00:00:00 2001
 From: Mathias Gredal <mathiasgredal@icloud.com>
 Date: Sat, 8 Feb 2025 07:35:07 +0100
-Subject: [PATCH 10/10] Testing
+Subject: [PATCH 10/11] Refactor and add UDP
 
 ---
- cmd/wasm.c                      | 664 +-------------------------------
- configs/qemu-x86_wasm_defconfig |   1 -
- include/wasm_ffi/wasm_ffi.h     |  20 +
- include/wasm_ffi/wasm_net.h     |  44 +++
- include/wasm_ffi/wasm_socket.h  | 183 +++++++++
- include/wasm_ffi/wasm_sys.h     |  56 +++
- lib/Makefile                    |   2 +-
- lib/wasm_ffi/Makefile           |   5 +
- lib/wasm_ffi/wasm_ffi.c         |  54 +++
- lib/wasm_ffi/wasm_net.c         | 212 ++++++++++
- lib/wasm_ffi/wasm_socket.c      | 660 +++++++++++++++++++++++++++++++
- lib/wasm_ffi/wasm_sys.c         |  55 +++
- 12 files changed, 1294 insertions(+), 662 deletions(-)
+ cmd/wasm.c                                    | 674 +-----------------
+ ...m_defconfig => qemu-x86_64_wasm_defconfig} |   4 +-
+ include/wasm_ffi/wasm_ffi.h                   |  20 +
+ include/wasm_ffi/wasm_net.h                   |  44 ++
+ include/wasm_ffi/wasm_socket.h                | 183 +++++
+ include/wasm_ffi/wasm_sys.h                   |  56 ++
+ lib/Makefile                                  |   2 +-
+ lib/wasm_ffi/Makefile                         |   5 +
+ lib/wasm_ffi/wasm_ffi.c                       |  54 ++
+ lib/wasm_ffi/wasm_net.c                       | 214 ++++++
+ lib/wasm_ffi/wasm_socket.c                    | 665 +++++++++++++++++
+ lib/wasm_ffi/wasm_sys.c                       |  55 ++
+ 12 files changed, 1312 insertions(+), 664 deletions(-)
+ rename configs/{qemu-x86_wasm_defconfig => qemu-x86_64_wasm_defconfig} (72%)
  create mode 100644 include/wasm_ffi/wasm_ffi.h
  create mode 100644 include/wasm_ffi/wasm_net.h
  create mode 100644 include/wasm_ffi/wasm_socket.h
@@ -28,10 +29,10 @@ Subject: [PATCH 10/10] Testing
  create mode 100644 lib/wasm_ffi/wasm_sys.c
 
 diff --git a/cmd/wasm.c b/cmd/wasm.c
-index 45bab732..2e3ba66c 100644
+index 45bab732..38a3cc03 100644
 --- a/cmd/wasm.c
 +++ b/cmd/wasm.c
-@@ -3,658 +3,15 @@
+@@ -3,658 +3,17 @@
   * Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
   */
  
@@ -56,8 +57,7 @@ index 45bab732..2e3ba66c 100644
 -#include <stdio.h>
  #include <vsprintf.h>
  #include <wasm3/wasm3.h>
-+#include <wasm_ffi/wasm_ffi.h>
- 
+-
 -/*
 - * Macro to link a raw function into a WebAssembly (WASM) module.
 - *
@@ -689,10 +689,14 @@ index 45bab732..2e3ba66c 100644
 -
 -    m3ApiReturn(ERR_VAL);
 -}
++#include <wasm_ffi/wasm_ffi.h>
++#include <wasm3/m3_env.h>
++#include <wasm3/m3_exception.h>
++#include <wasm3/m3_info.h>
  
  /*
   * Execute a WebAssembly (WASM) program.
-@@ -731,21 +88,8 @@ static int do_wasm(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[]
+@@ -731,21 +90,14 @@ static int do_wasm(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[]
      }
  
      /* Link host functions required by the WASM module */
@@ -711,20 +715,31 @@ index 45bab732..2e3ba66c 100644
 -    LINK_RAW_FUNCTION(module, "env_socket_write", "i(I*i)", &env_socket_write);
 -    LINK_RAW_FUNCTION(module, "env_socket_all_writes_acked", "i(I)", &env_socket_all_writes_acked);
 -    LINK_RAW_FUNCTION(module, "env_socket_read", "i(I*i)", &env_socket_read);
-+    wasm_ffi_link_all(module);
-+
++    bool error = wasm_ffi_link_all(module);
++    if (error)
++    {
++        log_err("Error linking host functions\n");
++        m3_FreeRuntime(runtime);
++        m3_FreeEnvironment(env);
++        return 1;
++    }
  
      /* Locate the "main" function within the WASM module */
      IM3Function function = NULL;
-diff --git a/configs/qemu-x86_wasm_defconfig b/configs/qemu-x86_wasm_defconfig
-index e811f083..a53cfa21 100644
+diff --git a/configs/qemu-x86_wasm_defconfig b/configs/qemu-x86_64_wasm_defconfig
+similarity index 72%
+rename from configs/qemu-x86_wasm_defconfig
+rename to configs/qemu-x86_64_wasm_defconfig
+index e811f083..4308e133 100644
 --- a/configs/qemu-x86_wasm_defconfig
-+++ b/configs/qemu-x86_wasm_defconfig
-@@ -1,7 +1,6 @@
- #include <configs/qemu-x86_defconfig>
++++ b/configs/qemu-x86_64_wasm_defconfig
+@@ -1,7 +1,7 @@
+-#include <configs/qemu-x86_defconfig>
++#include <configs/qemu-x86_64_defconfig>
  
  CONFIG_WASM=y
 -
++CONFIG_PCNET=y
  CONFIG_BOOTCOMMAND="setenv serverip 10.0.2.2; setenv ipaddr 10.0.2.15; setenv netmask 255.255.255.0; tftpboot $loadaddr main.wasm; dhcp; wasm $loadaddr $filesize" 
  CONFIG_SYS_MALLOC_LEN=0x10000000
  SYS_MALLOC_CLEAR_ON_INIT=n
@@ -1084,7 +1099,7 @@ index 00000000..e50f90ee
 \ No newline at end of file
 diff --git a/lib/wasm_ffi/wasm_ffi.c b/lib/wasm_ffi/wasm_ffi.c
 new file mode 100644
-index 00000000..c8686b3a
+index 00000000..5e0232fd
 --- /dev/null
 +++ b/lib/wasm_ffi/wasm_ffi.c
 @@ -0,0 +1,54 @@
@@ -1110,7 +1125,7 @@ index 00000000..c8686b3a
 +        /* Handle errors from the linking process */                                                                   \
 +        if (result != m3Err_none && result != m3Err_functionLookupFailed)                                              \
 +        {                                                                                                              \
-+            log_err("Error linking function '%s': %s\n", func_name, result);                                           \
++            printf("Error linking function '%s': %s\n", func_name, result);                                           \
 +            return 1;                                                                                                  \
 +        }                                                                                                              \
 +    } while (0)
@@ -1145,29 +1160,31 @@ index 00000000..c8686b3a
 \ No newline at end of file
 diff --git a/lib/wasm_ffi/wasm_net.c b/lib/wasm_ffi/wasm_net.c
 new file mode 100644
-index 00000000..eea056ff
+index 00000000..012a0178
 --- /dev/null
 +++ b/lib/wasm_ffi/wasm_net.c
-@@ -0,0 +1,212 @@
+@@ -0,0 +1,214 @@
 +// SPDX-License-Identifier: GPL-2.0+
 +/*
 + * Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
 + */
 +
-+#include "lwip/err.h"
-+#include "wasm3/wasm3.h"
++#include <lwip/err.h>
++#include <lwip/tcp.h>
++#include <lwip/tcpbase.h>
++#include <lwip/timeouts.h>
++#include <net-common.h>
++#include <net-lwip.h>
 +#include <stdint.h>
++#include <wasm3/wasm3.h>
 +#include <wasm_ffi/wasm_net.h>
 +#include <wasm_ffi/wasm_socket.h>
 +
-+#include <lwip/timeouts.h>
-+#include <lwip/tcp.h>
-+#include <lwip/tcpbase.h>
-+#include <net-common.h>
-+#include <net-lwip.h>
-+
 +/* Current network interface */
 +static struct netif *current_netif = NULL;
++
++/* Current ethernet device */
++static struct udevice *current_eth_dev = NULL;
 +
 +/* Utility function to teardown the network interface */
 +err_t net_teardown_util(void)
@@ -1206,15 +1223,15 @@ index 00000000..eea056ff
 +    eth_set_current();
 +
 +    /* Retrieve the current Ethernet device */
-+    struct udevice *udev = eth_get_dev();
-+    if (!udev)
++    current_eth_dev = eth_get_dev();
++    if (!current_eth_dev)
 +    {
 +        /* If no valid device is found, return an error */
 +        m3ApiReturn(ERR_IF);
 +    }
 +
 +    /* Create a new network interface for the device */
-+    current_netif = net_lwip_new_netif(udev);
++    current_netif = net_lwip_new_netif(current_eth_dev);
 +    if (!current_netif)
 +    {
 +        m3ApiReturn(ERR_IF);
@@ -1246,7 +1263,7 @@ index 00000000..eea056ff
 +    }
 +
 +    /* Process any pending network events */
-+    err_t err = net_lwip_rx(eth_get_dev(), current_netif);
++    err_t err = net_lwip_rx(current_eth_dev, current_netif);
 +    if (err != ERR_OK)
 +    {
 +        m3ApiReturn(err);
@@ -1363,10 +1380,10 @@ index 00000000..eea056ff
 +}
 diff --git a/lib/wasm_ffi/wasm_socket.c b/lib/wasm_ffi/wasm_socket.c
 new file mode 100644
-index 00000000..d7364790
+index 00000000..e7672d98
 --- /dev/null
 +++ b/lib/wasm_ffi/wasm_socket.c
-@@ -0,0 +1,660 @@
+@@ -0,0 +1,665 @@
 +// SPDX-License-Identifier: GPL-2.0+
 +/*
 + * Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
@@ -1405,7 +1422,7 @@ index 00000000..d7364790
 +{
 +    int8_t index = (int8_t)(uintptr_t)arg;
 +
-+    printf("tcp_err_callback: index = %d, err = %d\n", index, err);
++    // printf("tcp_err_callback: index = %d, err = %d\n", index, err);
 +
 +    /* Get the socket */
 +    net_socket_t *sock = net_socket_get(index);
@@ -1426,7 +1443,7 @@ index 00000000..d7364790
 +{
 +    int8_t index = (int8_t)(uintptr_t)arg;
 +
-+    printf("tcp_sent_callback: index = %d, len = %d\n", index, len);
++    // printf("tcp_sent_callback: index = %d, len = %d\n", index, len);
 +
 +    /* Get the socket */
 +    net_socket_t *sock = net_socket_get(index);
@@ -1444,7 +1461,7 @@ index 00000000..d7364790
 +{
 +    int8_t index = (int8_t)(uintptr_t)arg;
 +
-+    printf("tcp_recv_callback: index = %d, err = %d\n", index, err);
++    // printf("tcp_recv_callback: index = %d, err = %d, len = %d\n", index, err, p->tot_len);
 +
 +    /* Get the socket */
 +    net_socket_t *sock = net_socket_get(index);
@@ -1469,7 +1486,7 @@ index 00000000..d7364790
 +{
 +    int8_t index = (int8_t)(uintptr_t)arg;
 +
-+    printf("tcp_connect_callback: index = %d, err = %d\n", index, err);
++    // printf("tcp_connect_callback: index = %d, err = %d\n", index, err);
 +
 +    /* Get the socket */
 +    net_socket_t *sock = net_socket_get(index);
@@ -1489,7 +1506,7 @@ index 00000000..d7364790
 +{
 +    int8_t listener_index = (int8_t)(uintptr_t)arg;
 +
-+    printf("tcp_accept_callback: listener_index = %d, err = %d\n", listener_index, err);
++    // printf("tcp_accept_callback: listener_index = %d, err = %d\n", listener_index, err);
 +
 +    /* Check if there was an error */
 +    if (err != ERR_OK || !newpcb)
@@ -1914,6 +1931,11 @@ index 00000000..d7364790
 +    /* Copy data from receive buffer to user buffer */
 +    uint16_t read_len = pbuf_copy_partial(p, buffer, length, sock->recv_bytes);
 +    sock->recv_bytes += read_len;
++
++    if (sock->type == CONN_TCP)
++    {
++        tcp_recved(sock->pcb.tcp, read_len);
++    }
 +
 +    /* If we've read all data, free the buffer */
 +    if (sock->recv_bytes == p->tot_len)

@@ -1,7 +1,7 @@
 From b099aa6489efc98ff31962ec21aa1d93b234f720 Mon Sep 17 00:00:00 2001
 From: Mathias Gredal <mathiasgredal@icloud.com>
 Date: Mon, 30 Dec 2024 02:56:56 +0100
-Subject: [PATCH 04/10] Add math compat
+Subject: [PATCH 04/11] Add math compat
 
 ---
  include/wasm3/m3_math_utils.h |   2 +-
