@@ -2,8 +2,11 @@ use super::socket::Socket;
 use crate::ffi;
 use crate::lwip_error::LwipError;
 use crate::util::ip_addr_to_u32;
+use std::cell::RefCell;
 use std::future::Future;
 use std::pin::Pin;
+
+use std::rc::Rc;
 use std::task::{Context, Poll};
 
 pub struct TcpSocket {
@@ -17,11 +20,13 @@ impl TcpSocket {
             return Err(LwipError::from_code(socket));
         }
         Ok(Self {
-            socket: Socket { socket },
+            socket: Socket {
+                socket: Rc::new(RefCell::new(socket)),
+            },
         })
     }
 
-    pub async fn connect_raw(&mut self, addr_str: &str, port: u16) -> Result<(), LwipError> {
+    pub async fn connect(&mut self, addr_str: &str, port: u16) -> Result<(), LwipError> {
         struct TcpConnection {
             socket: i32,
         }
@@ -42,20 +47,23 @@ impl TcpSocket {
                     return Poll::Ready(Ok(()));
                 }
 
+                log::error!("Failed to connect to socket poll: {}", err);
                 return Poll::Ready(Err(LwipError::from_code(err)));
             }
         }
 
         let addr = ip_addr_to_u32(addr_str)?;
-        let result: i32 =
-            unsafe { ffi::env_net_socket_connect(self.socket.socket, addr, port.into()) };
+        let result: i32 = unsafe {
+            ffi::env_net_socket_connect(self.socket.socket.borrow().clone(), addr, port.into())
+        };
 
         if result != LwipError::Ok.to_code() {
+            log::error!("Failed to connect to socket: {}", result);
             return Err(LwipError::from_code(result));
         }
 
         let result = TcpConnection {
-            socket: self.socket.socket,
+            socket: self.socket.socket.borrow().clone(),
         }
         .await;
 
@@ -68,7 +76,9 @@ impl TcpSocket {
 
     pub fn bind(&self, addr_str: &str, port: u16) -> Result<(), LwipError> {
         let addr = ip_addr_to_u32(addr_str)?;
-        let result = unsafe { ffi::env_net_socket_bind(self.socket.socket, addr, port.into()) };
+        let result = unsafe {
+            ffi::env_net_socket_bind(self.socket.socket.borrow().clone(), addr, port.into())
+        };
         if result != LwipError::Ok.to_code() {
             return Err(LwipError::from_code(result));
         }
@@ -76,7 +86,8 @@ impl TcpSocket {
     }
 
     pub fn listen(&self, backlog: u32) -> Result<(), LwipError> {
-        let result = unsafe { ffi::env_net_socket_listen(self.socket.socket, backlog) };
+        let result =
+            unsafe { ffi::env_net_socket_listen(self.socket.socket.borrow().clone(), backlog) };
 
         if result != LwipError::Ok.to_code() {
             return Err(LwipError::from_code(result));
@@ -106,18 +117,20 @@ impl TcpSocket {
                 }
 
                 return Poll::Ready(Ok(TcpSocket {
-                    socket: Socket { socket: result },
+                    socket: Socket {
+                        socket: Rc::new(RefCell::new(result)),
+                    },
                 }));
             }
         }
 
-        let result = unsafe { ffi::env_net_socket_accept(self.socket.socket) };
+        let result = unsafe { ffi::env_net_socket_accept(self.socket.socket.borrow().clone()) };
         if result != LwipError::Ok.to_code() {
             return Err(LwipError::from_code(result));
         }
 
         let accept_result = TcpAccept {
-            socket: self.socket.socket,
+            socket: self.socket.socket.borrow().clone(),
         }
         .await;
 

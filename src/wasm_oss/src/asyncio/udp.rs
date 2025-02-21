@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct UdpSocket {
-    pub socket: Rc<RefCell<Socket>>,
+    pub socket: Socket,
 }
 
 impl UdpSocket {
@@ -17,14 +17,17 @@ impl UdpSocket {
             return Err(LwipError::from_code(socket));
         }
         Ok(Self {
-            socket: Rc::new(RefCell::new(Socket { socket })),
+            socket: Socket {
+                socket: Rc::new(RefCell::new(socket)),
+            },
         })
     }
 
     pub fn bind(&self, addr_str: &str, port: u16) -> Result<(), LwipError> {
         let addr = ip_addr_to_u32(addr_str)?;
-        let result =
-            unsafe { ffi::env_net_socket_bind(self.socket.borrow().socket, addr, port.into()) };
+        let result = unsafe {
+            ffi::env_net_socket_bind(self.socket.socket.borrow().clone(), addr, port.into())
+        };
         if result != LwipError::Ok.to_code() {
             return Err(LwipError::from_code(result));
         }
@@ -33,8 +36,9 @@ impl UdpSocket {
 
     pub fn connect(&self, addr_str: &str, port: u16) -> Result<(), LwipError> {
         let addr = ip_addr_to_u32(addr_str)?;
-        let result =
-            unsafe { ffi::env_net_socket_connect(self.socket.borrow().socket, addr, port.into()) };
+        let result = unsafe {
+            ffi::env_net_socket_connect(self.socket.socket.borrow().clone(), addr, port.into())
+        };
         if result != LwipError::Ok.to_code() {
             return Err(LwipError::from_code(result));
         }

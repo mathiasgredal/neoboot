@@ -45,9 +45,8 @@ impl embedded_nal_async::TcpConnect for TcpSocket {
         }
 
         let mut socket = socket.unwrap();
-        let result = socket
-            .connect_raw(remote.ip().to_string().as_str(), remote.port())
-            .await;
+        let result =
+            TcpSocket::connect(&mut socket, remote.ip().to_string().as_str(), remote.port()).await;
         if result.is_err() {
             let err = result.err().unwrap();
             return Err(err.into());
@@ -61,7 +60,7 @@ impl embedded_nal_async::ConnectedUdp for UdpSocket {
     type Error = LwipError;
 
     async fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-        let result = Socket::write(&mut self.socket.borrow_mut(), data).await;
+        let result = Socket::write(&mut self.socket, data).await;
         if result.is_err() {
             let err = result.err().unwrap();
             return Err(err.into());
@@ -71,7 +70,7 @@ impl embedded_nal_async::ConnectedUdp for UdpSocket {
     }
 
     async fn receive_into(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
-        let result = Socket::read(&mut self.socket.borrow_mut(), buffer.len() as u16).await;
+        let result = Socket::read(&mut self.socket, buffer.len() as u16).await;
         if result.is_err() {
             let err = result.err().unwrap();
             return Err(err.into());
@@ -97,7 +96,7 @@ impl embedded_nal_async::UnconnectedUdp for UdpSocket {
             return Err(result.err().unwrap().into());
         }
 
-        let result = Socket::write(&mut self.socket.borrow_mut(), data).await;
+        let result = Socket::write(&mut self.socket, data).await;
         if result.is_err() {
             return Err(result.err().unwrap().into());
         }
@@ -109,7 +108,7 @@ impl embedded_nal_async::UnconnectedUdp for UdpSocket {
         &mut self,
         buffer: &mut [u8],
     ) -> Result<(usize, std::net::SocketAddr, std::net::SocketAddr), Self::Error> {
-        let result = Socket::read(&mut self.socket.borrow_mut(), buffer.len() as u16).await;
+        let result = Socket::read(&mut self.socket, buffer.len() as u16).await;
         if result.is_err() {
             return Err(result.err().unwrap().into());
         }

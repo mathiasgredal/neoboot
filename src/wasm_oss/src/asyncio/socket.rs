@@ -1,14 +1,17 @@
 use futures_lite::future::yield_now;
 use log::{error, info};
+use std::cell::RefCell;
 use std::future::Future;
 use std::pin::Pin;
+use std::rc::Rc;
 use std::task::{Context, Poll};
 
 use crate::ffi;
 use crate::lwip_error::LwipError;
 
+#[derive(Clone)]
 pub struct Socket {
-    pub socket: i32,
+    pub socket: Rc<RefCell<i32>>,
 }
 
 impl Socket {
@@ -58,7 +61,7 @@ impl Socket {
         let buffer = vec![0u8; len as usize];
 
         Read {
-            socket: self.socket,
+            socket: self.socket.borrow().clone(),
             buf: Some(buffer),
         }
         .await
@@ -90,8 +93,9 @@ impl Socket {
         }
 
         // 1. Call env_socket_write
-        let result =
-            unsafe { ffi::env_net_socket_write(self.socket, buf.as_ptr(), buf.len() as u32) };
+        let result = unsafe {
+            ffi::env_net_socket_write(self.socket.borrow().clone(), buf.as_ptr(), buf.len() as u32)
+        };
 
         if result != LwipError::Ok.to_code() {
             let err = LwipError::from_code(result);
@@ -101,7 +105,7 @@ impl Socket {
 
         // 3. If no error, return a tcp write future
         let result = Write {
-            socket: self.socket,
+            socket: self.socket.borrow().clone(),
         }
         .await;
 
@@ -116,8 +120,8 @@ impl Socket {
 
 impl Drop for Socket {
     fn drop(&mut self) {
-        info!("Closing socket: {}", self.socket);
-        let result = unsafe { ffi::env_net_socket_free(self.socket) };
+        info!("Closing socket: {}", self.socket.borrow().clone());
+        let result = unsafe { ffi::env_net_socket_free(self.socket.borrow().clone()) };
         if result != LwipError::Ok.to_code() {
             error!("Failed to close socket: {}", LwipError::from_code(result));
         }

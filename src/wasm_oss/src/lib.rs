@@ -5,7 +5,6 @@ mod lwip_error;
 mod panic;
 mod util;
 use asyncio::{sleep_ms, tcp::TcpSocket};
-use futures_lite::future::yield_now;
 use log::info;
 use logging::init_with_level;
 use simple_async_local_executor::Executor;
@@ -21,11 +20,13 @@ fn mainloop_3(executor: Executor) {
 
         let mut socket = socket.unwrap();
 
-        let result = socket.connect_raw("192.168.1.120", 8081).await;
+        let result = socket.connect("10.0.2.2", 8081).await;
         if result.is_err() {
             log::error!("Failed to connect to socket: {}", result.err().unwrap());
             return;
         }
+
+        return;
 
         let mut numBytes = 0;
         let mut last_print = 0;
@@ -66,7 +67,6 @@ pub extern "C" fn main() {
         info!("Starting mainloop");
         let executor = Executor::default();
         let exit: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
-        mainloop_3(executor.clone());
 
         let exit_2 = exit.clone();
         executor.spawn(async move {
@@ -75,6 +75,8 @@ pub extern "C" fn main() {
             info!("Current time: {}", unsafe { ffi::env_now() });
             *exit_2.borrow_mut() = true;
         });
+
+        mainloop_3(executor.clone());
 
         loop {
             // TODO: Make some kind of reactor design, to handle this more modularly
