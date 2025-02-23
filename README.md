@@ -15,10 +15,8 @@ Designed like Novel Netware
 
 ## TODO:
 - check that env_net_setup has been called
-- convert tcp to netconn for dual udp, tcp support
-- create dns function on top of rustdns
-- support embedded_io_async and embedded_nal_async traits
-- integrate with reqwless(reqwest) and picoserve(axum)
+- support embedded_io_async and embedded_nal_async traits [DONE]
+- integrate with reqwless(reqwest alternative)[DONE] and picoserve(axum alternative)
 - websockets using tungstenite
 - autobahn test suite
 - use flatbuffers to create an rpc protocol
@@ -41,3 +39,11 @@ I just wasted the entire day on this.
 
 ### 2025-02-21
 In addition to u-boot, i will also need to support iPXE as a bootloader runtime.
+Look into using release-please to manage releases.
+Implement all traits required to use hickory resolver
+Use hyper to implement http client
+
+### 2025-02-23
+Due to the use of tokio inside both hickory and hyper, it doesn't seem possible to these libraries.
+Since there is no good recursive dns resolver in rust, i will just allow calls to the u-boots lwip resolver.
+We need better controls for DHCP and static IP configuration and network error handling.

@@ -140,3 +140,58 @@ impl embedded_io::Error for LwipError {
         }
     }
 }
+
+impl Into<std::io::Error> for LwipError {
+    fn into(self) -> std::io::Error {
+        match self {
+            LwipError::Ok => std::io::Error::new(std::io::ErrorKind::Other, "lwIP Ok"),
+            LwipError::OutOfMemory => {
+                std::io::Error::new(std::io::ErrorKind::OutOfMemory, "lwIP Out of memory")
+            }
+            LwipError::Buffer => {
+                std::io::Error::new(std::io::ErrorKind::Other, "lwIP Buffer error")
+            }
+            LwipError::Timeout => std::io::Error::new(std::io::ErrorKind::TimedOut, "lwIP Timeout"),
+            LwipError::Routing => {
+                std::io::Error::new(std::io::ErrorKind::HostUnreachable, "lwIP Routing problem")
+            }
+            LwipError::InProgress => {
+                std::io::Error::new(std::io::ErrorKind::Other, "lwIP Operation in progress")
+            }
+            LwipError::InvalidValue => {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "lwIP Illegal value")
+            }
+            LwipError::WouldBlock => {
+                std::io::Error::new(std::io::ErrorKind::WouldBlock, "lwIP Operation would block")
+            }
+            LwipError::AddressInUse => {
+                std::io::Error::new(std::io::ErrorKind::AddrInUse, "lwIP Address in use")
+            }
+            LwipError::AlreadyConnecting => {
+                std::io::Error::new(std::io::ErrorKind::Other, "lwIP Already connecting")
+            }
+            LwipError::AlreadyConnected => {
+                std::io::Error::new(std::io::ErrorKind::Other, "lwIP Already connected")
+            }
+            LwipError::NotConnected => {
+                std::io::Error::new(std::io::ErrorKind::NotConnected, "lwIP Not connected")
+            }
+            LwipError::NetworkInterface => {
+                std::io::Error::new(std::io::ErrorKind::Other, "lwIP Low-level netif error")
+            }
+            LwipError::ConnectionAborted => std::io::Error::new(
+                std::io::ErrorKind::ConnectionAborted,
+                "lwIP Connection aborted",
+            ),
+            LwipError::ConnectionReset => {
+                std::io::Error::new(std::io::ErrorKind::ConnectionReset, "lwIP Connection reset")
+            }
+            LwipError::ConnectionClosed => {
+                std::io::Error::new(std::io::ErrorKind::NotConnected, "lwIP Connection closed")
+            }
+            LwipError::IllegalArgument => {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "lwIP Illegal argument")
+            }
+        }
+    }
+}

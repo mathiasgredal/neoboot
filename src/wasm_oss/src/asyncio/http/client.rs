@@ -5,7 +5,6 @@ use super::response::ResponseData;
 use super::response::ResponseMetadata;
 use crate::asyncio::dns::Dns;
 use crate::asyncio::tcp::TcpSocket;
-use crate::asyncio::udp::UdpSocket;
 use async_fn_stream::try_fn_stream;
 use bytes::Bytes;
 use embedded_io_async::Read;
@@ -13,12 +12,11 @@ use reqwless::client::HttpClient;
 use reqwless::request::Method;
 use std::collections::HashMap;
 use std::error::Error as StdError;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 pub struct Client {
     socket: TcpSocket,
-    dns: Dns<UdpSocket>,
+    dns: Dns,
     base_url: String,
     default_headers: HashMap<String, String>,
     timeout: Duration,
@@ -30,10 +28,7 @@ impl Client {
     pub fn new() -> Self {
         Self {
             socket: TcpSocket::create().unwrap(),
-            dns: Dns::new(
-                UdpSocket::create().unwrap(),
-                SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53),
-            ),
+            dns: Dns::new(),
             base_url: String::new(),
             default_headers: HashMap::new(),
             timeout: Duration::from_secs(10),
@@ -42,7 +37,7 @@ impl Client {
         }
     }
 
-    fn client(&self) -> HttpClient<'_, TcpSocket, Dns<UdpSocket>> {
+    fn client(&self) -> HttpClient<'_, TcpSocket, Dns> {
         HttpClient::new(&self.socket, &self.dns)
     }
 

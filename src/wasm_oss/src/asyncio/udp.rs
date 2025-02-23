@@ -1,4 +1,4 @@
-use super::socket::Socket;
+use super::socket::{Socket, SocketInner};
 use crate::ffi;
 use crate::lwip_error::LwipError;
 use crate::util::ip_addr_to_u32;
@@ -18,7 +18,7 @@ impl UdpSocket {
         }
         Ok(Self {
             socket: Socket {
-                socket: Rc::new(RefCell::new(socket)),
+                inner: Rc::new(RefCell::new(SocketInner { socket })),
             },
         })
     }
@@ -26,7 +26,7 @@ impl UdpSocket {
     pub fn bind(&self, addr_str: &str, port: u16) -> Result<(), LwipError> {
         let addr = ip_addr_to_u32(addr_str)?;
         let result = unsafe {
-            ffi::env_net_socket_bind(self.socket.socket.borrow().clone(), addr, port.into())
+            ffi::env_net_socket_bind(self.socket.inner.borrow().socket, addr, port.into())
         };
         if result != LwipError::Ok.to_code() {
             return Err(LwipError::from_code(result));
@@ -37,7 +37,7 @@ impl UdpSocket {
     pub fn connect(&self, addr_str: &str, port: u16) -> Result<(), LwipError> {
         let addr = ip_addr_to_u32(addr_str)?;
         let result = unsafe {
-            ffi::env_net_socket_connect(self.socket.socket.borrow().clone(), addr, port.into())
+            ffi::env_net_socket_connect(self.socket.inner.borrow().socket, addr, port.into())
         };
         if result != LwipError::Ok.to_code() {
             return Err(LwipError::from_code(result));

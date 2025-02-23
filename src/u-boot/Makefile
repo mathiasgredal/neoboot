@@ -58,7 +58,7 @@ u-boot-ide: u-boot-patches u-boot-vendor ## Make u-boot compile-commands.json fo
 	@printf "$(COLOR_BLUE)🚀 Generating compile-commands.json for U-Boot...$(COLOR_RESET)\n"
 	@$(DOCKER) build -f $(U_BOOT_DIR)/Dockerfile --target compile-commands -t $(U_BOOT_COMPILE_COMMANDS_IMAGE_TAG) \
 		--build-arg U_BOOT_ARCHIVE="$(U_BOOT_ARCHIVE)" \
-		--build-arg DEFCONFIG=qemu_arm64_lwip_defconfig \
+		--build-arg DEFCONFIG=qemu_arm64_wasm_defconfig \
 		$(U_BOOT_DIR) && \
 	$(DOCKER) run -it --rm --privileged $(U_BOOT_COMPILE_COMMANDS_IMAGE_TAG) \
 		cat /u-boot/compile_commands.json | \

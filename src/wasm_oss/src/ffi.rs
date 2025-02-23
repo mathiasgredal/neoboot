@@ -12,6 +12,12 @@ unsafe extern "C" {
     // pub fn env_max_sockets() -> i32;
     // pub fn env_used_sockets() -> i32;
 
+    // DNS
+    pub fn env_net_dns_set_server(server_addr: u32);
+    pub fn env_net_dns_lookup(hostname: *const u8, len: u32) -> i32;
+    pub fn env_net_dns_lookup_poll() -> i32;
+    pub fn env_net_dns_lookup_result() -> u32;
+
     // Socket
     pub fn env_net_socket_new_tcp() -> i32;
     pub fn env_net_socket_new_udp() -> i32;

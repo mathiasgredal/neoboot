@@ -1,0 +1,1087 @@
+From 00cb7f74802ae4fe07ecceb4c81db3b05a8a3d36 Mon Sep 17 00:00:00 2001
+From: Mathias Gredal <mathiasgredal@icloud.com>
+Date: Thu, 20 Feb 2025 23:26:02 +0100
+Subject: [PATCH 11/12] Adding dns
+
+---
+ Kconfig                           |   4 +-
+ configs/qemu_arm64_wasm_defconfig |   2 +-
+ include/wasm_ffi/wasm_dns.h       |  77 +++++++++++++
+ include/wasm_ffi/wasm_net.h       |  27 +++++
+ include/wasm_ffi/wasm_socket.h    |  37 +------
+ lib/wasm_ffi/Makefile             |   2 +-
+ lib/wasm_ffi/wasm_dns.c           | 136 +++++++++++++++++++++++
+ lib/wasm_ffi/wasm_ffi.c           |  10 +-
+ lib/wasm_ffi/wasm_net.c           | 177 ++++++++++++++++++++++++++----
+ lib/wasm_ffi/wasm_socket.c        | 149 ++++++++++++++-----------
+ 10 files changed, 494 insertions(+), 127 deletions(-)
+ create mode 100644 include/wasm_ffi/wasm_dns.h
+ create mode 100644 lib/wasm_ffi/wasm_dns.c
+
+diff --git a/Kconfig b/Kconfig
+index 2906fbd8..59a41d28 100644
+--- a/Kconfig
++++ b/Kconfig
+@@ -747,7 +747,9 @@ config WASM
+ 	default n
+ 	select EFI_HTTP_BOOT
+ 	select PROT_TCP_LWIP
+-	select PROT_TCP_SOCKET_LWIP
++	select PROT_UDP_LWIP
++	select PROT_DNS_LWIP
++	select PROT_DHCP_LWIP
+ 	help
+ 	  Enable WebAssembly support.
+ 
+diff --git a/configs/qemu_arm64_wasm_defconfig b/configs/qemu_arm64_wasm_defconfig
+index 5ee0a734..3e196f32 100644
+--- a/configs/qemu_arm64_wasm_defconfig
++++ b/configs/qemu_arm64_wasm_defconfig
+@@ -2,6 +2,6 @@
+ 
+ CONFIG_WASM=y
+ CONFIG_LWIP_DEBUG=n
+-CONFIG_BOOTCOMMAND="setenv serverip 10.0.2.2; setenv gatewayip 10.0.2.2; setenv ipaddr 10.0.2.15; setenv netmask 255.255.255.0; tftpboot $loadaddr main.wasm; wasm $loadaddr $filesize" 
++CONFIG_BOOTCOMMAND="setenv serverip 10.0.2.2; setenv gatewayip 10.0.2.2; setenv ipaddr 10.0.2.15; setenv netmask 255.255.255.0; dhcp; tftpboot $loadaddr main.wasm; wasm $loadaddr $filesize" 
+ CONFIG_SYS_MALLOC_LEN=0x10000000
+ SYS_MALLOC_CLEAR_ON_INIT=n
+diff --git a/include/wasm_ffi/wasm_dns.h b/include/wasm_ffi/wasm_dns.h
+new file mode 100644
+index 00000000..43778b20
+--- /dev/null
++++ b/include/wasm_ffi/wasm_dns.h
+@@ -0,0 +1,77 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
++ */
++
++#ifndef __WASM_DNS_H__
++#define __WASM_DNS_H__
++
++#include <lwip/err.h>
++#include <lwip/ip_addr.h>
++
++/* Timeout for a DNS lookup in milliseconds */
++#define DNS_RESOLVE_TIMEOUT_MS 4000
++
++/* Maximum length of a hostname */
++#define DNS_MAX_HOSTNAME_LEN 128
++
++// DNS state machine
++enum dns_state_t
++{
++    DNS_STATE_UNINITIALIZED = 0,
++    DNS_STATE_IDLE = 1,
++    DNS_STATE_IN_PROGRESS = 2,
++    DNS_STATE_READY = 3,
++    DNS_STATE_ERROR = 4
++};
++
++/* Forward declaration of struct net_dns_t */
++typedef struct net_dns_t net_dns_t;
++
++/**
++ * struct net_dns_t - structure to hold DNS context data.
++ *
++ * This structure is used to manage the state and data associated with
++ * DNS lookups, including the state machine, error codes, lookup results,
++ * and initialization status.
++ */
++struct net_dns_t
++{
++    enum dns_state_t state;     // DNS state machine
++    uint32_t lookup_start_time; // Start time for timeout tracking
++    err_t error;                // Error code
++    ip_addr_t result;           // Lookup result
++};
++
++
++/** 
++ * net_dns_set_server() - set the DNS server to use.
++ *
++ * @server_addr: IP address of the DNS server to use
++ */
++void net_dns_set_server(uint32_t server_addr);
++
++/**
++ * net_dns_lookup() - perform a DNS lookup for the given hostname.
++ *
++ * @hostname: hostname to resolve
++ * @hostname_len: length of the hostname
++ * @return: error code
++ */
++err_t net_dns_lookup(const char *hostname, uint32_t hostname_len);
++
++/*
++ * net_dns_lookup_poll() - poll a DNS lookup for the given hostname.
++ *
++ * @return: error code
++ */
++err_t net_dns_lookup_poll(void);
++
++/*
++ * net_dns_lookup_result() - get the result of a DNS lookup.
++ *
++ * @return: the IP address of the resolved hostname or NULL if the result is not available
++ */
++uint32_t net_dns_lookup_result(void);
++
++#endif /* __WASM_DNS_H__ */
+diff --git a/include/wasm_ffi/wasm_net.h b/include/wasm_ffi/wasm_net.h
+index 66461706..3f3197a8 100644
+--- a/include/wasm_ffi/wasm_net.h
++++ b/include/wasm_ffi/wasm_net.h
+@@ -7,8 +7,28 @@
+ #define __WASM_NET_H__
+ 
+ #include <wasm3/wasm3.h>
++#include <wasm_ffi/wasm_dns.h>
+ #include <wasm_ffi/wasm_socket.h>
+ 
++/* Maximum number of network sockets based on bitfield size */
++#define MAX_NETWORK_SOCKETS (sizeof(uint64_t) * CHAR_BIT)
++
++/*
++ * struct net_context_t - structure to hold network context data.
++ */
++typedef struct
++{
++    bool is_initialized;
++    struct netif *current_netif;
++    struct udevice *current_eth_dev;
++    net_socket_t sockets[MAX_NETWORK_SOCKETS];
++    uint64_t active_connection_bitfield;
++    net_dns_t dns;
++} net_context_t;
++
++/* Network context getter */
++net_context_t *net_context_get(void);
++
+ /**
+  * net_setup() - setup the network environment and initialize
+  * the network interface.
+@@ -27,6 +47,13 @@ m3ApiRawFunction(net_teardown);
+  */
+ m3ApiRawFunction(net_rx);
+ 
++/* Bindings to all functions in wasm_dns.h */
++m3ApiRawFunction(net_dns_set_server_ffi);
++m3ApiRawFunction(net_dns_lookup_ffi);
++m3ApiRawFunction(net_dns_lookup_poll_ffi);
++m3ApiRawFunction(net_dns_lookup_result_ffi);
++m3ApiRawFunction(net_dns_lookup_err_ffi);
++
+ /* Bindings to all functions in wasm_socket.h */
+ m3ApiRawFunction(net_socket_new_tcp_ffi);
+ m3ApiRawFunction(net_socket_new_udp_ffi);
+diff --git a/include/wasm_ffi/wasm_socket.h b/include/wasm_ffi/wasm_socket.h
+index bff18984..ffc70b7f 100644
+--- a/include/wasm_ffi/wasm_socket.h
++++ b/include/wasm_ffi/wasm_socket.h
+@@ -6,25 +6,18 @@
+ #ifndef __WASM_SOCKET_H__
+ #define __WASM_SOCKET_H__
+ 
+-#include <limits.h>
+ #include <linux/types.h>
+ #include <lwip/api.h>
+ #include <lwip/err.h>
+ 
+-/* Bitfield type for tracking active connections */
+-typedef uint64_t net_bitfield_t;
+-
+-/* Maximum number of network sockets based on bitfield size */
+-#define MAX_NETWORK_SOCKETS (sizeof(net_bitfield_t) * CHAR_BIT)
+-
+ /* Timeout for a connection attempt in milliseconds */
+ #define CONNECTION_TIMEOUT_MS 4000
+ 
++/* enum conn_type_t - network socket types */
+ enum conn_type_t
+ {
+     CONN_TCP = 0x10,
+-    CONN_UDP = 0x20,
+-    CONN_RAW = 0x30
++    CONN_UDP = 0x20
+ };
+ 
+ /* Forward declaration of struct net_socket_t */
+@@ -32,27 +25,13 @@ typedef struct net_socket_t net_socket_t;
+ 
+ /*
+  * struct net_socket_t - structure to hold network socket data.
+- *
+- * @type:                The type of the network socket (TCP, UDP, etc.).
+- * @pcb:                 Pointer to the protocol control block (PCB) union, which can hold different PCB types (TCP,
+- * UDP, etc.).
+- * @is_connected:        Boolean flag indicating whether the socket is currently connected.
+- * @connection_start_time: Timestamp (in milliseconds) when a connection attempt was initiated.
+- * @last_error:          The last error encountered by this socket.
+- * @total_bytes_sent:    The total number of bytes sent on this socket.
+- * @acknowledged_bytes_sent: The number of bytes sent that have been acknowledged by the remote peer.
+- * @recv_buffer:         Pointer to the pbuf chain used as the receive buffer for this socket.
+- * @recv_bytes:          The number of bytes currently available in the receive buffer.
+- * @listener:            For server sockets, pointer to the listening socket.
+  */
+ struct net_socket_t
+ {
+     enum conn_type_t type;
+     union {
+-        struct ip_pcb *ip;
+         struct tcp_pcb *tcp;
+         struct udp_pcb *udp;
+-        struct raw_pcb *raw;
+     } pcb;
+     bool is_connected;
+     uint64_t connection_start_time;
+@@ -64,18 +43,6 @@ struct net_socket_t
+     net_socket_t *listener;
+ };
+ 
+-/*
+- * struct net_context_t - structure to hold network context data.
+- *
+- * @sockets: array of network sockets
+- * @active_connection_bitfield: bitfield to track active connections
+- */
+-typedef struct
+-{
+-    net_socket_t sockets[MAX_NETWORK_SOCKETS];
+-    net_bitfield_t active_connection_bitfield;
+-} net_context_t;
+-
+ /**
+  * net_socket_new() - create a new network socket.
+  *
+diff --git a/lib/wasm_ffi/Makefile b/lib/wasm_ffi/Makefile
+index e50f90ee..44918777 100644
+--- a/lib/wasm_ffi/Makefile
++++ b/lib/wasm_ffi/Makefile
+@@ -2,4 +2,4 @@
+ #
+ # Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
+ 
+-obj-y += wasm_ffi.o wasm_sys.o wasm_net.o wasm_socket.o
+\ No newline at end of file
++obj-y += wasm_ffi.o wasm_sys.o wasm_net.o wasm_socket.o wasm_dns.o
+\ No newline at end of file
+diff --git a/lib/wasm_ffi/wasm_dns.c b/lib/wasm_ffi/wasm_dns.c
+new file mode 100644
+index 00000000..ab6aa0eb
+--- /dev/null
++++ b/lib/wasm_ffi/wasm_dns.c
+@@ -0,0 +1,136 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (C) 2025, Mathias Gredal, mathiasgredal@icloud.com.
++ */
++
++#include "lwip/err.h"
++#include <lwip/dns.h>
++#include <lwip/ip_addr.h>
++#include <stdint.h>
++#include <time.h>
++#include <wasm_ffi/wasm_dns.h>
++#include <wasm_ffi/wasm_net.h>
++
++static bool net_dns_is_timer_expired(uint32_t start_time)
++{
++    uint32_t current_time = get_timer(0);
++    uint32_t elapsed =
++        (current_time >= start_time) ? (current_time - start_time) : (UINT32_MAX - start_time + current_time + 1);
++    return elapsed > DNS_RESOLVE_TIMEOUT_MS;
++}
++
++static void net_dns_reset_state(net_dns_t *dns)
++{
++    dns->state = DNS_STATE_IDLE;
++    dns->error = ERR_OK;
++    dns->result.addr = 0;
++    dns->lookup_start_time = 0;
++}
++
++static void net_dns_lookup_cb(const char *name, const ip_addr_t *ipaddr, void *arg)
++{
++    net_dns_t *dns = &net_context_get()->dns;
++
++    if (ipaddr == NULL)
++    {
++        dns->error = ERR_VAL;
++        dns->state = DNS_STATE_ERROR;
++    }
++    else
++    {
++        dns->state = DNS_STATE_READY;
++        dns->error = ERR_OK;
++        dns->result = *ipaddr;
++    }
++}
++
++void net_dns_set_server(uint32_t server_addr)
++{
++    ip_addr_t ip_addr = {.addr = server_addr};
++    dns_setserver(0, &ip_addr);
++}
++
++err_t net_dns_lookup(const char *hostname, uint32_t hostname_len)
++{
++    net_context_t *net_ctx = net_context_get();
++    net_dns_t *dns = &net_ctx->dns;
++
++    // Sanitize input
++    char sanitized_hostname[DNS_MAX_HOSTNAME_LEN];
++    snprintf(sanitized_hostname, DNS_MAX_HOSTNAME_LEN, "%.*s", hostname_len, hostname);
++
++    // Initialize if needed
++    if (dns->state == DNS_STATE_UNINITIALIZED)
++    {
++        dns_init();
++        net_dns_reset_state(dns);
++    }
++
++    // Check if another lookup is in progress
++    if (dns->state == DNS_STATE_IN_PROGRESS)
++    {
++        return ERR_INPROGRESS;
++    }
++
++    // Reset previous state
++    net_dns_reset_state(dns);
++
++    // Start new lookup
++    err_t err = dns_gethostbyname(sanitized_hostname, &dns->result, net_dns_lookup_cb, NULL);
++
++    switch (err)
++    {
++    case ERR_OK: // DNS lookup was found in cache
++        dns->state = DNS_STATE_READY;
++        return ERR_OK;
++    case ERR_INPROGRESS: // DNS lookup is in progress
++        dns->state = DNS_STATE_IN_PROGRESS;
++        dns->lookup_start_time = get_timer(0);
++        return ERR_OK;
++    default: // DNS lookup failed
++        dns->error = err;
++        dns->state = DNS_STATE_ERROR;
++        return err;
++    }
++}
++
++err_t net_dns_lookup_poll(void)
++{
++    net_context_t *net_ctx = net_context_get();
++    net_dns_t *dns = &net_ctx->dns;
++
++    switch (dns->state)
++    {
++    case DNS_STATE_UNINITIALIZED:
++        return ERR_IF;
++    case DNS_STATE_IN_PROGRESS:
++        if (net_dns_is_timer_expired(dns->lookup_start_time))
++        {
++            dns->error = ERR_TIMEOUT;
++            dns->state = DNS_STATE_ERROR;
++            return ERR_TIMEOUT;
++        }
++        return ERR_INPROGRESS;
++    case DNS_STATE_ERROR:
++        return dns->error;
++    case DNS_STATE_READY:
++        return ERR_OK;
++    case DNS_STATE_IDLE:
++        return ERR_CLSD;
++    default:
++        return ERR_CLSD;
++    }
++}
++
++uint32_t net_dns_lookup_result(void)
++{
++    net_context_t *net_ctx = net_context_get();
++    net_dns_t *dns = &net_ctx->dns;
++
++    if (dns->state != DNS_STATE_READY || dns->error != ERR_OK)
++    {
++        return 0;
++    }
++
++    return dns->result.addr;
++}
+diff --git a/lib/wasm_ffi/wasm_ffi.c b/lib/wasm_ffi/wasm_ffi.c
+index 5e0232fd..ac22d183 100644
+--- a/lib/wasm_ffi/wasm_ffi.c
++++ b/lib/wasm_ffi/wasm_ffi.c
+@@ -8,9 +8,6 @@
+ #include <wasm_ffi/wasm_net.h>
+ #include <wasm_ffi/wasm_sys.h>
+ 
+-/*
+- * Macro to link a raw function into a WebAssembly (WASM) module.
+- */
+ #define LINK_RAW_FUNCTION(module, func_name, sig, func_ptr)                                                            \
+     do                                                                                                                 \
+     {                                                                                                                  \
+@@ -37,6 +34,13 @@ bool wasm_ffi_link_all(IM3Module module)
+     LINK_RAW_FUNCTION(module, "env_net_teardown", "i()", &net_teardown);
+     LINK_RAW_FUNCTION(module, "env_net_rx", "i()", &net_rx);
+ 
++
++    /* DNS functions */
++    LINK_RAW_FUNCTION(module, "env_net_dns_set_server", "v(i)", &net_dns_set_server_ffi);
++    LINK_RAW_FUNCTION(module, "env_net_dns_lookup", "i(*i)", &net_dns_lookup_ffi);
++    LINK_RAW_FUNCTION(module, "env_net_dns_lookup_poll", "i()", &net_dns_lookup_poll_ffi);
++    LINK_RAW_FUNCTION(module, "env_net_dns_lookup_result", "i()", &net_dns_lookup_result_ffi);
++
+     /* Socket functions */
+     LINK_RAW_FUNCTION(module, "env_net_socket_new_tcp", "i()", &net_socket_new_tcp_ffi);
+     LINK_RAW_FUNCTION(module, "env_net_socket_new_udp", "i()", &net_socket_new_udp_ffi);
+diff --git a/lib/wasm_ffi/wasm_net.c b/lib/wasm_ffi/wasm_net.c
+index 012a0178..480d62c3 100644
+--- a/lib/wasm_ffi/wasm_net.c
++++ b/lib/wasm_ffi/wasm_net.c
+@@ -14,13 +14,12 @@
+ #include <wasm_ffi/wasm_net.h>
+ #include <wasm_ffi/wasm_socket.h>
+ 
+-/* Current network interface */
+-static struct netif *current_netif = NULL;
++static net_context_t net_ctx;
+ 
+-/* Current ethernet device */
+-static struct udevice *current_eth_dev = NULL;
++net_context_t* net_context_get(void) {
++    return &net_ctx;
++}
+ 
+-/* Utility function to teardown the network interface */
+ err_t net_teardown_util(void)
+ {
+     /* Clean up all sockets */
+@@ -30,17 +29,17 @@ err_t net_teardown_util(void)
+     }
+ 
+     /* Remove network interface */
+-    if (current_netif != NULL)
++    if (net_ctx.current_netif != NULL)
+     {
+-        net_lwip_remove_netif(current_netif);
+-        current_netif = NULL;
++        net_lwip_remove_netif(net_ctx.current_netif);
+     }
+ 
++    /* Reset the network context */
++    memset(&net_ctx, 0, sizeof(net_context_t));
++
+     return ERR_OK;
+ }
+ 
+-/* FFI function implementations */
+-
+ m3ApiRawFunction(net_setup)
+ {
+     m3ApiReturnType(int32_t);
+@@ -57,20 +56,23 @@ m3ApiRawFunction(net_setup)
+     eth_set_current();
+ 
+     /* Retrieve the current Ethernet device */
+-    current_eth_dev = eth_get_dev();
+-    if (!current_eth_dev)
++    net_ctx.current_eth_dev = eth_get_dev();
++    if (!net_ctx.current_eth_dev)
+     {
+         /* If no valid device is found, return an error */
+         m3ApiReturn(ERR_IF);
+     }
+ 
+     /* Create a new network interface for the device */
+-    current_netif = net_lwip_new_netif(current_eth_dev);
+-    if (!current_netif)
++    net_ctx.current_netif = net_lwip_new_netif(net_ctx.current_eth_dev);
++    if (!net_ctx.current_netif)
+     {
+         m3ApiReturn(ERR_IF);
+     }
+ 
++    /* Mark the network context as initialized */
++    net_ctx.is_initialized = true;
++
+     m3ApiReturn(ERR_OK);
+ }
+ 
+@@ -78,26 +80,21 @@ m3ApiRawFunction(net_teardown)
+ {
+     m3ApiReturnType(int32_t);
+     err_t err = net_teardown_util();
+-    if (err != ERR_OK)
+-    {
+-        m3ApiReturn(err);
+-    }
+-
+-    m3ApiReturn(ERR_OK);
++    m3ApiReturn(err);
+ }
+ 
+ m3ApiRawFunction(net_rx)
+ {
+     m3ApiReturnType(int32_t);
+ 
+-    /* Check if the network interface is valid */
+-    if (!current_netif)
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
+     {
+         m3ApiReturn(ERR_IF);
+     }
+ 
+     /* Process any pending network events */
+-    err_t err = net_lwip_rx(current_eth_dev, current_netif);
++    err_t err = net_lwip_rx(net_ctx.current_eth_dev, net_ctx.current_netif);
+     if (err != ERR_OK)
+     {
+         m3ApiReturn(err);
+@@ -109,10 +106,65 @@ m3ApiRawFunction(net_rx)
+     m3ApiReturn(ERR_OK);
+ }
+ 
+-/* Bindings to all functions in wasm_socket.h */
++m3ApiRawFunction(net_dns_set_server_ffi) {
++    m3ApiGetArg(uint32_t, server_addr);
++    net_dns_set_server(server_addr);
++    m3ApiSuccess();
++}
++
++m3ApiRawFunction(net_dns_lookup_ffi) {
++    m3ApiReturnType(int32_t);
++    m3ApiGetArgMem(void *, hostname);
++    m3ApiGetArg(uint32_t, hostname_len);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(ERR_IF);
++    }
++
++    err_t err = net_dns_lookup(hostname, hostname_len);
++    m3ApiReturn(err);
++}
++
++m3ApiRawFunction(net_dns_lookup_poll_ffi)
++{
++    m3ApiReturnType(int32_t);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(ERR_IF);
++    }
++
++    err_t err = net_dns_lookup_poll();
++    m3ApiReturn(err);
++}
++
++m3ApiRawFunction(net_dns_lookup_result_ffi)
++{
++    m3ApiReturnType(uint32_t);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(0);
++    }
++
++    uint32_t result = net_dns_lookup_result();
++    m3ApiReturn(result);
++}
++
+ m3ApiRawFunction(net_socket_new_tcp_ffi)
+ {
+     m3ApiReturnType(int32_t);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(ERR_IF);
++    }
++
+     err_t err = net_socket_new(CONN_TCP);
+     m3ApiReturn(err);
+ }
+@@ -120,6 +172,13 @@ m3ApiRawFunction(net_socket_new_tcp_ffi)
+ m3ApiRawFunction(net_socket_new_udp_ffi)
+ {
+     m3ApiReturnType(int32_t);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(ERR_IF);
++    }
++
+     err_t err = net_socket_new(CONN_UDP);
+     m3ApiReturn(err);
+ }
+@@ -128,6 +187,13 @@ m3ApiRawFunction(net_socket_free_ffi)
+ {
+     m3ApiReturnType(int32_t);
+     m3ApiGetArg(int32_t, index);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(ERR_IF);
++    }
++
+     err_t err = net_socket_free(index);
+     m3ApiReturn(err);
+ }
+@@ -138,6 +204,13 @@ m3ApiRawFunction(net_socket_connect_ffi)
+     m3ApiGetArg(int32_t, index);
+     m3ApiGetArg(uint32_t, ip);
+     m3ApiGetArg(uint16_t, port);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(ERR_IF);
++    }
++
+     err_t err = net_socket_connect(index, ip, port);
+     m3ApiReturn(err);
+ }
+@@ -146,6 +219,13 @@ m3ApiRawFunction(net_socket_connect_poll_ffi)
+ {
+     m3ApiReturnType(int32_t);
+     m3ApiGetArg(int32_t, index);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(ERR_IF);
++    }
++
+     err_t err = net_socket_connect_poll(index);
+     m3ApiReturn(err);
+ }
+@@ -156,6 +236,13 @@ m3ApiRawFunction(net_socket_bind_ffi)
+     m3ApiGetArg(int32_t, index);
+     m3ApiGetArg(uint32_t, ip);
+     m3ApiGetArg(uint16_t, port);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(ERR_IF);
++    }
++
+     err_t err = net_socket_bind(index, ip, port);
+     m3ApiReturn(err);
+ }
+@@ -165,6 +252,13 @@ m3ApiRawFunction(net_socket_listen_ffi)
+     m3ApiReturnType(int32_t);
+     m3ApiGetArg(int32_t, index);
+     m3ApiGetArg(uint16_t, backlog);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(ERR_IF);
++    }
++
+     err_t err = net_socket_listen(index, backlog);
+     m3ApiReturn(err);
+ }
+@@ -173,6 +267,13 @@ m3ApiRawFunction(net_socket_accept_ffi)
+ {
+     m3ApiReturnType(int32_t);
+     m3ApiGetArg(int32_t, index);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(ERR_IF);
++    }
++
+     err_t err = net_socket_accept(index);
+     m3ApiReturn(err);
+ }
+@@ -181,6 +282,13 @@ m3ApiRawFunction(net_socket_accept_poll_ffi)
+ {
+     m3ApiReturnType(int32_t);
+     m3ApiGetArg(int32_t, index);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(ERR_IF);
++    }
++
+     err_t err = net_socket_accept_poll(index);
+     m3ApiReturn(err);
+ }
+@@ -191,6 +299,13 @@ m3ApiRawFunction(net_socket_read_ffi)
+     m3ApiGetArg(int32_t, index);
+     m3ApiGetArgMem(void *, buffer);
+     m3ApiGetArg(uint32_t, length);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(ERR_IF);
++    }
++
+     err_t err = net_socket_read(index, buffer, length);
+     m3ApiReturn(err);
+ }
+@@ -201,6 +316,13 @@ m3ApiRawFunction(net_socket_write_ffi)
+     m3ApiGetArg(int32_t, index);
+     m3ApiGetArgMem(void *, buffer);
+     m3ApiGetArg(uint32_t, length);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(ERR_IF);
++    }
++
+     err_t err = net_socket_write(index, buffer, length);
+     m3ApiReturn(err);
+ }
+@@ -209,6 +331,13 @@ m3ApiRawFunction(net_socket_write_poll_ffi)
+ {
+     m3ApiReturnType(int32_t);
+     m3ApiGetArg(int32_t, index);
++
++    /* Check if the network context is initialized */
++    if (!net_ctx.is_initialized)
++    {
++        m3ApiReturn(ERR_IF);
++    }
++
+     err_t err = net_socket_write_poll(index);
+     m3ApiReturn(err);
+ }
+diff --git a/lib/wasm_ffi/wasm_socket.c b/lib/wasm_ffi/wasm_socket.c
+index e7672d98..1d006705 100644
+--- a/lib/wasm_ffi/wasm_socket.c
++++ b/lib/wasm_ffi/wasm_socket.c
+@@ -8,21 +8,18 @@
+ #include <lwip/err.h>
+ #include <lwip/tcp.h>
+ #include <lwip/udp.h>
+-#include <stdio.h>
+-#include <wasm_ffi/wasm_socket.h>
+-
+ #include <net-common.h>
+ #include <net-lwip.h>
+-
+-/* Network context */
+-static net_context_t net_ctx;
++#include <stdio.h>
++#include <wasm_ffi/wasm_net.h>
++#include <wasm_ffi/wasm_socket.h>
+ 
+ /* Utility functions */
+ static int32_t net_socket_find_free_slot(void)
+ {
+     for (int32_t i = 0; i < MAX_NETWORK_SOCKETS; i++)
+     {
+-        if (!(net_ctx.active_connection_bitfield & (1ULL << i)))
++        if (!(net_context_get()->active_connection_bitfield & (1ULL << i)))
+         {
+             return i;
+         }
+@@ -45,12 +42,23 @@ static void tcp_err_callback(void *arg, err_t err)
+         return;
+     }
+ 
+-    /* Free the socket */
+-    err_t err_2 = net_socket_free(index);
+-    if (err_2 != ERR_OK)
++    /* Mark the socket as freed */
++    switch (sock->type)
+     {
+-        printf("net_socket_free failed: %d\n", err_2);
++    case CONN_TCP: {
++        sock->pcb.tcp = NULL;
++        break;
++    }
++    case CONN_UDP: {
++        sock->pcb.udp = NULL;
++        break;
++    }
++    default:
++        break;
+     }
++
++    /* Set the last error */
++    sock->last_error = err;
+ }
+ 
+ static err_t tcp_sent_callback(void *arg, struct tcp_pcb *pcb, u16_t len)
+@@ -66,6 +74,7 @@ static err_t tcp_sent_callback(void *arg, struct tcp_pcb *pcb, u16_t len)
+         return ERR_ARG;
+     }
+ 
++    /* Update the acknowledged bytes sent */
+     sock->acknowledged_bytes_sent += len;
+ 
+     return ERR_OK;
+@@ -147,31 +156,31 @@ static err_t tcp_accept_callback(void *arg, struct tcp_pcb *newpcb, err_t err)
+     }
+ 
+     /* Set the connection socket */
+-    memset(&net_ctx.sockets[client_index], 0, sizeof(net_socket_t));
+-    net_ctx.sockets[client_index].type = CONN_TCP;
+-    net_ctx.sockets[client_index].pcb.tcp = newpcb;
++    net_context_t* net_ctx = net_context_get();
++    memset(&net_ctx->sockets[client_index], 0, sizeof(net_socket_t));
++    net_ctx->sockets[client_index].type = CONN_TCP;
++    net_ctx->sockets[client_index].pcb.tcp = newpcb;
+ 
+     /* Set the listener socket */
+-    net_ctx.sockets[client_index].listener = &net_ctx.sockets[listener_index];
++    net_ctx->sockets[client_index].listener = &net_ctx->sockets[listener_index];
+ 
+     /* Set callbacks */
+-    tcp_arg(net_ctx.sockets[client_index].pcb.tcp, (void *)(uintptr_t)client_index);
+-    tcp_err(net_ctx.sockets[client_index].pcb.tcp, tcp_err_callback);
+-    tcp_sent(net_ctx.sockets[client_index].pcb.tcp, tcp_sent_callback);
+-    tcp_recv(net_ctx.sockets[client_index].pcb.tcp, tcp_recv_callback);
++    tcp_arg(net_ctx->sockets[client_index].pcb.tcp, (void *)(uintptr_t)client_index);
++    tcp_err(net_ctx->sockets[client_index].pcb.tcp, tcp_err_callback);
++    tcp_sent(net_ctx->sockets[client_index].pcb.tcp, tcp_sent_callback);
++    tcp_recv(net_ctx->sockets[client_index].pcb.tcp, tcp_recv_callback);
+ 
+     /* Mark the socket as active */
+-    net_ctx.active_connection_bitfield |= (1ULL << client_index);
++    net_ctx->active_connection_bitfield |= (1ULL << client_index);
+ 
+     return ERR_OK;
+ }
+ 
+-static void udp_recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *p,
+-    const ip_addr_t *addr, u16_t port)
++static void udp_recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *addr, u16_t port)
+ {
+     int8_t index = (int8_t)(uintptr_t)arg;
+ 
+-    printf("udp_recv_callback: index = %d, addr = %s, port = %d\n", index, ipaddr_ntoa(addr), port);
++    // printf("udp_recv_callback: index = %d, addr = %s, port = %d\n", index, ipaddr_ntoa(addr), port);
+ 
+     /* Get the socket */
+     net_socket_t *sock = net_socket_get(index);
+@@ -203,43 +212,47 @@ err_t net_socket_new(enum conn_type_t conn_type)
+     }
+ 
+     /* Initialize socket structure */
+-    memset(&net_ctx.sockets[index], 0, sizeof(net_socket_t));
+-    net_ctx.sockets[index].type = conn_type;
++    net_context_t* net_ctx = net_context_get();
++    memset(&net_ctx->sockets[index], 0, sizeof(net_socket_t));
++    net_ctx->sockets[index].type = conn_type;
+ 
+     switch (conn_type)
+     {
+-    case CONN_TCP:
+-        net_ctx.sockets[index].pcb.tcp = tcp_new_ip_type(IPADDR_TYPE_V4);
+-        if (!net_ctx.sockets[index].pcb.tcp)
++    case CONN_TCP: {
++        net_ctx->sockets[index].pcb.tcp = tcp_new_ip_type(IPADDR_TYPE_V4);
++        if (!net_ctx->sockets[index].pcb.tcp)
+         {
+             return ERR_MEM;
+         }
+ 
+         /* Set callbacks */
+-        tcp_arg(net_ctx.sockets[index].pcb.tcp, (void *)(uintptr_t)index);
+-        tcp_err(net_ctx.sockets[index].pcb.tcp, tcp_err_callback);
+-        tcp_sent(net_ctx.sockets[index].pcb.tcp, tcp_sent_callback);
+-        tcp_recv(net_ctx.sockets[index].pcb.tcp, tcp_recv_callback);
++        tcp_arg(net_ctx->sockets[index].pcb.tcp, (void *)(uintptr_t)index);
++        tcp_err(net_ctx->sockets[index].pcb.tcp, tcp_err_callback);
++        tcp_sent(net_ctx->sockets[index].pcb.tcp, tcp_sent_callback);
++        tcp_recv(net_ctx->sockets[index].pcb.tcp, tcp_recv_callback);
+         break;
+-    case CONN_UDP:
+-        net_ctx.sockets[index].pcb.udp = udp_new_ip_type(IPADDR_TYPE_V4);
+-        if (!net_ctx.sockets[index].pcb.udp)
++    }
++    case CONN_UDP: {
++        net_ctx->sockets[index].pcb.udp = udp_new_ip_type(IPADDR_TYPE_V4);
++        if (!net_ctx->sockets[index].pcb.udp)
+         {
+             return ERR_MEM;
+         }
+ 
+         /* Set callbacks */
+-        udp_recv(net_ctx.sockets[index].pcb.udp, udp_recv_callback, (void *)(uintptr_t)index);
++        udp_recv(net_ctx->sockets[index].pcb.udp, udp_recv_callback, (void *)(uintptr_t)index);
+         break;
++    }
+     default:
+         return ERR_ARG;
+     }
+ 
+     /* Mark socket as active */
+-    net_ctx.active_connection_bitfield |= (1ULL << index);
++    net_ctx->active_connection_bitfield |= (1ULL << index);
+ 
+     return index;
+ }
++
+ net_socket_t *net_socket_get(int8_t index)
+ {
+     /* Return NULL if index is out of bounds */
+@@ -249,12 +262,13 @@ net_socket_t *net_socket_get(int8_t index)
+     }
+ 
+     /* Return NULL if socket is not active */
+-    if (!(net_ctx.active_connection_bitfield & (1ULL << index)))
++    net_context_t* net_ctx = net_context_get();
++    if (!(net_ctx->active_connection_bitfield & (1ULL << index)))
+     {
+         return NULL;
+     }
+ 
+-    return &net_ctx.sockets[index];
++    return &net_ctx->sockets[index];
+ }
+ 
+ err_t net_socket_free(int8_t index)
+@@ -266,37 +280,50 @@ err_t net_socket_free(int8_t index)
+         return ERR_ARG;
+     }
+ 
++    // printf("net_socket_free: index = %d\n", index);
++
++    /* Free receive buffer if any */
++    if (sock->recv_buffer)
++    {
++        pbuf_free(sock->recv_buffer);
++        sock->recv_buffer = NULL;
++    }
++
+     /* Close connection */
+     switch (sock->type)
+     {
+     case CONN_TCP: {
+-        err_t err = tcp_close(sock->pcb.tcp);
+-        if (err != ERR_OK)
++        if (sock->pcb.tcp != NULL)
+         {
+-            printf("tcp_close failed, aborting: %d\n", err);
+-            tcp_abort(sock->pcb.tcp);
++            // printf("net_socket_free: closing TCP connection\n");
++            err_t err = tcp_close(sock->pcb.tcp);
++            if (err != ERR_OK)
++            {
++                // printf("tcp_close failed, aborting: %d\n", err);
++                tcp_abort(sock->pcb.tcp);
++            }
+         }
+         break;
+     }
+     case CONN_UDP: {
+-        udp_remove(sock->pcb.udp);
++        if (sock->pcb.udp != NULL)
++        {
++            // printf("net_socket_free: removing UDP connection\n");
++            udp_remove(sock->pcb.udp);
++        }
+         break;
+     }
+     default:
+-        printf("net_socket_free: unknown socket type\n");
+-    }
+-
+-    /* Free receive buffer if any */
+-    if (sock->recv_buffer)
+-    {
+-        pbuf_free(sock->recv_buffer);
++        // printf("net_socket_free: unknown socket type\n");
++        break;
+     }
+ 
+     /* Clear socket data */
+     memset(sock, 0, sizeof(net_socket_t));
+ 
+     /* Mark socket as inactive */
+-    net_ctx.active_connection_bitfield &= ~(1ULL << index);
++    net_context_t* net_ctx = net_context_get();
++    net_ctx->active_connection_bitfield &= ~(1ULL << index);
+ 
+     return ERR_OK;
+ }
+@@ -346,30 +373,28 @@ err_t net_socket_connect_poll(int8_t index)
+     net_socket_t *sock = net_socket_get(index);
+     if (!sock)
+     {
++        // printf("net_socket_connect_poll: socket not found %d\n", index);
+         return ERR_ARG;
+     }
+ 
+     /* Check if the socket is connected */
+     if (sock->is_connected)
+     {
++        // printf("net_socket_connect_poll: socket connected\n");
+         return ERR_OK;
+     }
+ 
+     /* Check if the socket has an error */
+     if (sock->last_error != ERR_OK)
+     {
++        // printf("net_socket_connect_poll: socket has error\n");
+         return sock->last_error;
+     }
+ 
+     /* Check if the connection has timed out */
+     if (get_timer(0) - sock->connection_start_time > CONNECTION_TIMEOUT_MS)
+     {
+-        printf("net_socket_connect_poll: connection timed out\n");
+-        err_t err = net_socket_free(index);
+-        if (err != ERR_OK)
+-        {
+-            printf("net_socket_free failed: %d\n", err);
+-        }
++        // printf("net_socket_connect_poll: connection timed out\n");
+         return ERR_TIMEOUT;
+     }
+ 
+@@ -496,13 +521,14 @@ err_t net_socket_accept_poll(int8_t index)
+     }
+ 
+     /* Find the newly created accept socket */
++    net_context_t* net_ctx = net_context_get();
+     net_socket_t *accept_sock = NULL;
+     int accept_sock_index = -1;
+     for (int i = 0; i < MAX_NETWORK_SOCKETS; i++)
+     {
+-        if (net_ctx.sockets[i].listener == listen_sock && !net_ctx.sockets[i].is_connected)
++        if (net_ctx->sockets[i].listener == listen_sock && !net_ctx->sockets[i].is_connected)
+         {
+-            accept_sock = &net_ctx.sockets[i];
++            accept_sock = &net_ctx->sockets[i];
+             accept_sock_index = i;
+             break;
+         }
+@@ -515,7 +541,7 @@ err_t net_socket_accept_poll(int8_t index)
+     }
+ 
+     /* Set the accept socket */
+-    net_ctx.sockets[accept_sock_index].is_connected = true;
++    net_ctx->sockets[accept_sock_index].is_connected = true;
+ 
+     return accept_sock_index;
+ }
+@@ -562,7 +588,6 @@ err_t net_socket_read(int8_t index, void *buffer, uint32_t length)
+     return read_len;
+ }
+ 
+-
+ err_t net_socket_write(int8_t index, const void *buffer, uint32_t length)
+ {
+     /* Get the socket */
+-- 
+2.39.3 (Apple Git-146)
+
