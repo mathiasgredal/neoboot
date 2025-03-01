@@ -38,7 +38,7 @@ impl Socket {
         impl Future for Read {
             type Output = Result<Vec<u8>, LwipError>;
 
-            fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+            fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 // SAFETY: FFI call to network stack
                 unsafe { ffi::env_net_rx() };
 
@@ -57,6 +57,7 @@ impl Socket {
                 };
 
                 if result == LwipError::WouldBlock.to_code() {
+                    cx.waker().wake_by_ref();
                     return Poll::Pending;
                 }
 
@@ -93,12 +94,13 @@ impl Socket {
         impl Future for Write {
             type Output = Result<(), LwipError>;
 
-            fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 unsafe { ffi::env_net_rx() };
 
                 let err = unsafe { ffi::env_net_socket_write_poll(self.socket) };
 
                 if err == LwipError::WouldBlock.to_code() {
+                    cx.waker().wake_by_ref();
                     return Poll::Pending;
                 }
 

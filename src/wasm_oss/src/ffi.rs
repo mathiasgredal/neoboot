@@ -8,7 +8,6 @@ unsafe extern "C" {
     pub fn env_net_setup() -> i32;
     pub fn env_net_teardown() -> i32;
     pub fn env_net_rx() -> i32;
-
     // pub fn env_max_sockets() -> i32;
     // pub fn env_used_sockets() -> i32;
 

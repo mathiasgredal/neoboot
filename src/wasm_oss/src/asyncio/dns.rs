@@ -59,7 +59,7 @@ async fn poll_dns() -> Result<IpAddr, LwipError> {
     impl Future for DnsPollingFuture {
         type Output = Result<IpAddr, LwipError>;
 
-        fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             unsafe { ffi::env_net_rx() };
 
             // Check DNS lookup status
@@ -72,7 +72,10 @@ async fn poll_dns() -> Result<IpAddr, LwipError> {
                     let ip = Ipv4Addr::new(chunks[3], chunks[2], chunks[1], chunks[0]);
                     Poll::Ready(Ok(IpAddr::V4(ip)))
                 }
-                LwipError::InProgress => Poll::Pending,
+                LwipError::InProgress => {
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
+                }
                 err => {
                     info!("DNS lookup failed result: {}", status);
                     Poll::Ready(Err(err))

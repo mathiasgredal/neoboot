@@ -8,7 +8,9 @@ use crate::asyncio::tcp::TcpSocket;
 use async_fn_stream::try_fn_stream;
 use bytes::Bytes;
 use embedded_io_async::Read;
+use log::info;
 use reqwless::client::HttpClient;
+use reqwless::client::TlsConfig;
 use reqwless::request::Method;
 use std::collections::HashMap;
 use std::error::Error as StdError;
@@ -16,6 +18,8 @@ use std::time::Duration;
 
 pub struct Client {
     socket: TcpSocket,
+    tls_read_buffer: Vec<u8>,
+    tls_write_buffer: Vec<u8>,
     dns: Dns,
     base_url: String,
     default_headers: HashMap<String, String>,
@@ -28,6 +32,8 @@ impl Client {
     pub fn new() -> Self {
         Self {
             socket: TcpSocket::create().unwrap(),
+            tls_read_buffer: vec![0; 4096 * 4],
+            tls_write_buffer: vec![0; 4096 * 4],
             dns: Dns::new(),
             base_url: String::new(),
             default_headers: HashMap::new(),
@@ -37,8 +43,17 @@ impl Client {
         }
     }
 
-    fn client(&self) -> HttpClient<'_, TcpSocket, Dns> {
-        HttpClient::new(&self.socket, &self.dns)
+    fn client(&mut self) -> HttpClient<'_, TcpSocket, Dns> {
+        HttpClient::new_with_tls(
+            &self.socket,
+            &self.dns,
+            TlsConfig::new(
+                0,
+                &mut self.tls_read_buffer,
+                &mut self.tls_write_buffer,
+                reqwless::client::TlsVerify::None,
+            ),
+        )
     }
 
     pub async fn request(
@@ -49,8 +64,9 @@ impl Client {
     ) -> Result<Response, Box<dyn StdError>> {
         let body_stream = try_fn_stream(|emitter| async move {
             let mut client = self.client();
-            let mut request = client.request(Method::GET, &url).await?;
-            let mut header_buf = [0; 4096];
+            let request = client.request(Method::GET, &url);
+            let mut request = request.await?;
+            let mut header_buf = [0; 4096 * 2];
             let response = request.send(&mut header_buf).await?;
 
             emitter

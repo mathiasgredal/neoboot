@@ -74,7 +74,8 @@ impl<'a> Response<'a> {
     pub async fn stream(self) -> impl Stream<Item = Result<Bytes, Error>> + use<'a> {
         return self.body_stream.map(|chunk| match chunk {
             Ok(ResponseData::Stream(chunk)) => Ok(chunk.data),
-            _ => Err(Error::IncorrectBodyWritten),
+            Ok(ResponseData::Metadata(_)) => Err(Error::IncorrectBodyWritten),
+            Err(e) => Err(e),
         });
     }
 

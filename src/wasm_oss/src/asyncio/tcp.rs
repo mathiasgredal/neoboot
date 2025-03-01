@@ -34,12 +34,13 @@ impl TcpSocket {
         impl Future for TcpConnection {
             type Output = Result<(), LwipError>;
 
-            fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 unsafe { ffi::env_net_rx() };
 
                 let err = unsafe { ffi::env_net_socket_connect_poll(self.socket) };
 
                 if err == LwipError::WouldBlock.to_code() {
+                    cx.waker().wake_by_ref();
                     return Poll::Pending;
                 }
 
@@ -104,12 +105,13 @@ impl TcpSocket {
         impl Future for TcpAccept {
             type Output = Result<TcpSocket, LwipError>;
 
-            fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 unsafe { ffi::env_net_rx() };
                 let result =
                     unsafe { ffi::env_net_socket_accept_poll(self.socket.inner.borrow().socket) };
 
                 if result == LwipError::WouldBlock.to_code() {
+                    cx.waker().wake_by_ref();
                     return Poll::Pending;
                 }
 

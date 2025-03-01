@@ -47,3 +47,16 @@ Use hyper to implement http client
 Due to the use of tokio inside both hickory and hyper, it doesn't seem possible to these libraries.
 Since there is no good recursive dns resolver in rust, i will just allow calls to the u-boots lwip resolver.
 We need better controls for DHCP and static IP configuration and network error handling.
+Reqwless supports TLS, but it doesn't support verifying certificates. Using rusttls with rusttls-rustcrypto would work, but requires a lot of work.
+We could also ignore certificate verification, and do our own certificate verification using JWT's:
+- Client makes a request to a server, including a request token
+- Server responds, and in the header it has signed the original request using x509 certificate
+- Client verifies the signature using the public key in the certificate
+- If the signature is valid, the client trusts the server
+
+### 2025-02-24
+I have made a new executor, which handles wakers better.
+It seems that we can get hyper and rustls to work. But there is an issue with the virtio-net driver which causes the tls stream to fail halfway through.
+
+### 2025-03-01
+Rusttls and hyper now work together.

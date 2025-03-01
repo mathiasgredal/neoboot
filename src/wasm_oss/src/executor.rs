@@ -1,218 +1,140 @@
-// Original source: https://github.com/enlightware/simple-async-local-executor
-use core::fmt;
-use slab::Slab;
-use std::{
-    cell::{Cell, RefCell},
-    future::Future,
-    hash::{Hash, Hasher},
-    pin::Pin,
-    ptr,
-    rc::Rc,
-    task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
-};
+use futures::lock::Mutex;
+use futures::task;
+use futures::task::ArcWake;
+use std::cell::RefCell;
+use std::future::Future;
+use std::pin::Pin;
+use std::rc::Rc;
+use std::sync::mpsc;
+use std::sync::Arc;
+use std::task::{Context, Poll};
 
-fn dummy_raw_waker() -> RawWaker {
-    fn no_op(_: *const ()) {}
-    fn clone(_: *const ()) -> RawWaker {
-        dummy_raw_waker()
-    }
-
-    let vtable = &RawWakerVTable::new(clone, no_op, no_op, no_op);
-    RawWaker::new(std::ptr::null::<()>(), vtable)
-}
-
-fn dummy_waker() -> Waker {
-    unsafe { Waker::from_raw(dummy_raw_waker()) }
+struct ExecutorInner {
+    scheduled: mpsc::Receiver<Arc<Task>>,
+    sender: mpsc::Sender<Arc<Task>>,
 }
 
 #[derive(Clone)]
-struct EventHandleInner {
-    index: usize,
-    executor: Rc<ExecutorInner>,
+pub struct Executor {
+    inner: Rc<RefCell<ExecutorInner>>,
+    exit_flag: Rc<RefCell<bool>>,
 }
 
-impl fmt::Debug for EventHandleInner {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.index.fmt(f)
-    }
-}
+unsafe impl Sync for Executor {}
+unsafe impl Send for Executor {}
 
-impl Eq for EventHandleInner {}
+impl Executor {
+    /// Initialize a new executor instance.
+    pub fn new() -> Executor {
+        let (sender, scheduled) = mpsc::channel();
 
-impl PartialEq for EventHandleInner {
-    fn eq(&self, other: &Self) -> bool {
-        self.index == other.index && ptr::eq(self.executor.as_ref(), other.executor.as_ref())
-    }
-}
-
-impl Hash for EventHandleInner {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.index.hash(state);
-        (self.executor.as_ref() as *const ExecutorInner).hash(state);
-    }
-}
-
-impl Drop for EventHandleInner {
-    fn drop(&mut self) {
-        self.executor.release_event_handle(self);
-    }
-}
-
-/// A handle for an event, can be kept and cloned around
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct EventHandle(Rc<EventHandleInner>);
-
-type SharedBool = Rc<Cell<bool>>;
-
-/// A future to await an event
-pub struct EventFuture {
-    ready: SharedBool,
-    _handle: EventHandle,
-    done: bool,
-}
-
-impl Future for EventFuture {
-    type Output = ();
-    fn poll(mut self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Self::Output> {
-        if self.ready.get() {
-            self.done = true;
-            Poll::Ready(())
-        } else {
-            Poll::Pending
+        Executor {
+            inner: Rc::new(RefCell::new(ExecutorInner { scheduled, sender })),
+            exit_flag: Rc::new(RefCell::new(false)),
         }
     }
+
+    /// Spawn a future onto the executor instance.
+    ///
+    /// The given future is wrapped with the `Task` harness and pushed into the
+    /// `scheduled` queue. The future will be executed when `run` is called.
+    pub fn spawn<F>(&self, future: F)
+    where
+        F: Future<Output = ()> + 'static,
+    {
+        Task::spawn(future, &self.inner.borrow().sender);
+    }
+
+    /// Run the executor until the exit flag is set.
+    pub fn run(&self) {
+        while let Ok(task) = self.inner.borrow().scheduled.recv() {
+            task.poll();
+
+            if *self.exit_flag.borrow() {
+                break;
+            }
+        }
+    }
+
+    /// Exit the executor.
+    pub fn exit(&mut self) {
+        let mut exit_flag = self.exit_flag.borrow_mut();
+        *exit_flag = true;
+    }
+}
+
+struct TaskFuture {
+    future: Pin<Box<dyn Future<Output = ()>>>,
+    poll: Poll<()>,
 }
 
 struct Task {
-    future: Pin<Box<dyn Future<Output = ()>>>,
+    task_future: Mutex<TaskFuture>,
+    executor: mpsc::Sender<Arc<Task>>,
+}
+
+// SAFETY: Since our executor is single-threaded, we can safely implement Sync and Send for Task.
+unsafe impl Sync for Task {}
+unsafe impl Send for Task {}
+
+impl ArcWake for Task {
+    fn wake_by_ref(arc_self: &Arc<Self>) {
+        arc_self.schedule();
+    }
+}
+
+impl TaskFuture {
+    fn new(future: impl Future<Output = ()> + 'static) -> TaskFuture {
+        TaskFuture {
+            future: Box::pin(future),
+            poll: Poll::Pending,
+        }
+    }
+
+    fn poll(&mut self, cx: &mut Context<'_>) {
+        // Spurious wake-ups are allowed, even after a future has
+        // returned `Ready`. However, polling a future which has
+        // already returned `Ready` is *not* allowed. For this
+        // reason we need to check that the future is still pending
+        // before we call it. Failure to do so can lead to a panic.
+        if self.poll.is_pending() {
+            self.poll = self.future.as_mut().poll(cx);
+        }
+    }
 }
 
 impl Task {
-    pub fn new(future: impl Future<Output = ()> + 'static) -> Task {
-        Task {
-            future: Box::pin(future),
-        }
-    }
-    fn poll(&mut self, context: &mut Context) -> Poll<()> {
-        self.future.as_mut().poll(context)
-    }
-}
-
-#[derive(Default)]
-struct ExecutorInner {
-    task_queue: RefCell<Vec<Task>>,
-    new_tasks: RefCell<Vec<Task>>,
-    events: RefCell<Slab<SharedBool>>,
-}
-
-impl ExecutorInner {
-    fn release_event_handle(&self, event: &EventHandleInner) {
-        self.events.borrow_mut().remove(event.index);
-    }
-}
-
-/// Single-threaded polling-based executor
-///
-/// This is a thin-wrapper (using [`Rc`]) around the real executor, so that this struct can be
-/// cloned and passed around.
-///
-/// See the [module documentation] for more details.
-///
-/// [module documentation]: index.html
-#[derive(Clone, Default)]
-pub struct Executor {
-    inner: Rc<ExecutorInner>,
-}
-
-impl Executor {
-    /// Spawn a new task to be run by this executor.
-    ///
-    /// # Example
-    /// ```
-    /// # use simple_async_local_executor::*;
-    /// async fn nop() {}
-    /// let executor = Executor::default();
-    /// executor.spawn(nop());
-    /// assert_eq!(executor.step(), false);
-    /// ```
-    pub fn spawn(&self, future: impl Future<Output = ()> + 'static) {
-        self.inner.new_tasks.borrow_mut().push(Task::new(future));
+    fn schedule(self: &Arc<Self>) {
+        let _ = self.executor.send(self.clone());
     }
 
-    /// Create an event handle, that can be used to [await](Executor::event()) and [notify](Executor::notify_event()) an event.
-    pub fn create_event_handle(&self) -> EventHandle {
-        let mut events = self.inner.events.borrow_mut();
-        let index = events.insert(Rc::new(Cell::new(false)));
-        EventHandle(Rc::new(EventHandleInner {
-            index,
-            executor: self.inner.clone(),
-        }))
+    fn poll(self: Arc<Self>) {
+        // Create a waker from the `Task` instance. This
+        // uses the `ArcWake` impl from above.
+        let waker = task::waker(self.clone());
+        let mut cx = Context::from_waker(&waker);
+
+        // No other thread ever tries to lock the task_future
+        let mut task_future = self.task_future.try_lock().unwrap();
+
+        // Poll the inner future
+        task_future.poll(&mut cx);
     }
 
-    /// Notify an event.
-    ///
-    /// All tasks currently waiting on this event will
-    /// progress at the next call to [`step`](Executor::step()).
-    pub fn notify_event(&self, handle: &EventHandle) {
-        self.inner.events.borrow_mut()[handle.0.index].replace(true);
-    }
+    // Spawns a new task with the given future.
+    //
+    // Initializes a new Task harness containing the given future and pushes it
+    // onto `sender`. The receiver half of the channel will get the task and
+    // execute it.
+    fn spawn<F>(future: F, sender: &mpsc::Sender<Arc<Task>>)
+    where
+        F: Future<Output = ()> + 'static,
+    {
+        let task = Arc::new(Task {
+            task_future: Mutex::new(TaskFuture::new(future)),
+            executor: sender.clone(),
+        });
 
-    /// Create an event future.
-    ///
-    /// Once this future is awaited, its task will be blocked until the next [`step`](Executor::step())
-    /// after [`notify_event`](Executor::notify_event()) is called with this `handle`.
-    pub fn event(&self, handle: &EventHandle) -> EventFuture {
-        let ready = self.inner.events.borrow_mut()[handle.0.index].clone();
-        EventFuture {
-            ready,
-            _handle: handle.clone(),
-            done: false,
-        }
-    }
-
-    /// Run each non-blocked task exactly once.
-    ///
-    /// Return whether there are any non-completed tasks.
-    ///
-    /// # Example
-    /// ```
-    /// # use simple_async_local_executor::*;
-    /// let executor = Executor::default();
-    /// let event = executor.create_event_handle();
-    /// async fn wait_event(event: EventHandle, executor: Executor) {
-    ///     executor.event(&event).await;
-    /// }
-    /// executor.spawn(wait_event(event.clone(), executor.clone()));
-    /// assert_eq!(executor.step(), true); // still one task in the queue
-    /// executor.notify_event(&event);
-    /// assert_eq!(executor.step(), false); // no more task in the queue
-    /// ```
-    pub fn step(&self) -> bool {
-        // dummy waker and context
-        let waker = dummy_waker();
-        let mut context = Context::from_waker(&waker);
-        // append new tasks to all tasks
-        let mut tasks = self.inner.task_queue.borrow_mut();
-        tasks.append(&mut self.inner.new_tasks.borrow_mut());
-        // go through all tasks, and keep uncompleted ones
-        let mut uncompleted_tasks = Vec::new();
-        let mut any_left = false;
-        for mut task in tasks.drain(..) {
-            match task.poll(&mut context) {
-                Poll::Ready(()) => {} // task done
-                Poll::Pending => {
-                    uncompleted_tasks.push(task);
-                    any_left = true;
-                }
-            }
-        }
-        // replace all tasks with uncompleted ones
-        *tasks = uncompleted_tasks;
-
-        // clear events
-        for (_, event) in self.inner.events.borrow_mut().iter_mut() {
-            event.replace(false);
-        }
-        any_left
+        let _ = sender.send(task);
     }
 }

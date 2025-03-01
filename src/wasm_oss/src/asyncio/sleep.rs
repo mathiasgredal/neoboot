@@ -18,11 +18,12 @@ impl Sleep {
 impl Future for Sleep {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let now = unsafe { ffi::env_now() };
         if now >= self.deadline {
             Poll::Ready(())
         } else {
+            cx.waker().wake_by_ref();
             Poll::Pending
         }
     }

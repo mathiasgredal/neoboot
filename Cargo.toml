@@ -3,3 +3,9 @@ resolver = "2"
 members = [
     "src/wasm_oss",
 ]
+
+[profile.release]
+opt-level = 2
+
+[profile.dev]
+opt-level = 2
