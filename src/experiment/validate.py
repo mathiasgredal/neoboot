@@ -1,0 +1,50 @@
+from jose import jwt
+from OpenSSL import crypto
+import base64
+
+# Load the root certificate (client only needs this)
+with open("root_cert.pem", "rb") as f:
+    root_cert = crypto.load_certificate(crypto.FILETYPE_PEM, f.read())
+
+# The JWT received from the server
+received_token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsIng1YyI6WyJNSUlDOHpDQ0FkdWdBd0lCQWdJVUs0RW51SGt1MTI2VEVVaERvYmxGQWcxZWhCTXdEUVlKS29aSWh2Y05BUUVMQlFBd0VqRVFNQTRHQTFVRUF3d0hVbTl2ZENCRFFUQWVGdzB5TlRBeU1qTXlNekkxTkROYUZ3MHlOakF5TWpNeU16STFORE5hTUJFeER6QU5CZ05WQkFNTUJsTjFZaUJEUVRDQ0FTSXdEUVlKS29aSWh2Y05BUUVCQlFBRGdnRVBBRENDQVFvQ2dnRUJBSWR3dHk3NkdYUjYxREtjcVg3R1dKeTZudmNBT1hUTW9wMi8zQ1RLQ2g5RHFLUGJJL1NQYTZXMnJqdG9xbjNHUFF1M2RqOWwrRE1xL1VjekY3Vk9iZ0dpcFJQcFd3VDV6azVpZWZBR0VGNkJCS3hlN2dLRlZpRENVWXkzYk90aVdiNFdPTEZLdTJWVzFMVEtscEZTdmxXYUZ5a1NQSXJqREdsOTBIK3BVa0VOSWtZZDhkSDlDT1k0U294SWNjMWU2R1k3dyt4TDdlZisrdmZzQ2VpY1dOY1gwUlRLQ01NVmJrSUdRVVU2dmFYdDd0OXZISFdKajg5bUJZWjlaSGpmb1htZHE4WU5tS3RQeEI3WGJSTUhqR29wL0NHbXgzZWRkSllycDZqTXpJcVhwTlhmdTBlUzdiUlJZWklyY0lDc0lRUEc0MEJNRmJKUzRmd0RVUDQwSnZFQ0F3RUFBYU5DTUVBd0hRWURWUjBPQkJZRUZBc2dUOFhOOThWK3BNSnR6R2loNVA0S2RRVmxNQjhHQTFVZEl3UVlNQmFBRkpWS0JCSStqUVQ4MFBOU1JhNklvbDRxSzAzcE1BMEdDU3FHU0liM0RRRUJDd1VBQTRJQkFRQS9zaFl2bGpDRVRmdEVFZnZKWWxqSDRRWFp4MzhjRzNENUxtL0Z5L2YxTWpsaStLK1BucWlUUUZ2S0x6K0dubHdHUG1DU0d4a0tLOWlHU2tMOWxieElkMVhERjJpbVVUL05ZaG1wdldRNjdsRmE2K0dWWnpMNE5oYTdrcHl6Wi82MGZ0cXZobk5VbHhKTk1sZ3VIT1UxcUwxSGswWVNYcVk0Slp0VE42Q1dqMlcybThmcXJLenQrU3VEbVVobnRRSG11dEJrN0VITUNRZC9BcitXRGl4VHZpbmdQTTQxTDBCYllyM2J2Mlgwa3VxWHAzc0Z1NENQUzBUUkZqMjZKRnJ0ZjZwbkE1ejJKWDVzQ0h0MnY0MjJyQUV4a2VKSEJwZmxpbzg0eHBOVndQWEdKTFp3NXBZYWJEdytVRzRoRklld1pDdndNdno3MVViQ2xtekY4Tjh5IiwiTUlJREJUQ0NBZTJnQXdJQkFnSVVBamtKVkJvQldydUN4VTJNSXJsTkxMdVhjaDB3RFFZSktvWklodmNOQVFFTEJRQXdFakVRTUE0R0ExVUVBd3dIVW05dmRDQkRRVEFlRncweU5UQXlNak15TXpJMU1qWmFGdzB5TmpBeU1qTXlNekkxTWpaYU1CSXhFREFPQmdOVkJBTU1CMUp2YjNRZ1EwRXdnZ0VpTUEwR0NTcUdTSWIzRFFFQkFRVUFBNElCRHdBd2dnRUtBb0lCQVFEWmZuVmx4dVRHWWY5dk40ODlhOGV2M3ZFek5MbTdVVlk2OUlNNnZIZjR6OG1nekFaNjVlUG5TTSszdWlSQys1YmJLb3NJOFp4NHNxNVNlWWd0Q3VNYkZMdVFZTm0yS3RFaDhHVzFGWGFpbkUzelBVbitxa0NFTzVSdGxBbmlyb2xqYmpWYU1iNUJhWnE4M1E1bzFKbWoxN0VmaVEvQmoremxiUTIvSTZKWWVTOWsyWEMySjhVc1NYWnV0c0V6UTdtYzJVbzZmQTlETWZibGl4em9RQ3JCLzZnVnpacXo2eXpOWjd5LzZRNkE5QkhkSzYrT3NxTTBDNStnYVBGTXJWbm5nU0lHWDBHOU94d3ltb2dhTXk5bWRPQ21JKzdtRXYrV0JSYmxManRCWWdoWWFsTWZROWZIdVdQQTFvVk0yc2hBZmtlSlZ6dmhhNzM4YUN1dHJSdEZBZ01CQUFHalV6QlJNQjBHQTFVZERnUVdCQlNWU2dRU1BvMEUvTkR6VWtXdWlLSmVLaXRONlRBZkJnTlZIU01FR0RBV2dCU1ZTZ1FTUG8wRS9ORHpVa1d1aUtKZUtpdE42VEFQQmdOVkhSTUJBZjhFQlRBREFRSC9NQTBHQ1NxR1NJYjNEUUVCQ3dVQUE0SUJBUUM5UVE1VDJaaThOQWlzSmlLeGIrQkpaeks1ZThlckNPbU1kOTZWS0djWFM4M2l1NGx4M3hVZGVXVE5nTlJZZXFJWkV0eGFEOWtFWmFzT1lTYTFmeld5NTFMeFpDTEJDcjZnUDk0RVQzNGFuNVFJak9OSjBFSTREOVJjb2oxNTBTNFV4S2xxOUxtblpxOEpKNWxEYXRLSGtkUU01SjNRWnFGdUZQY3c3d2t5SGFicUNYd1ZlSEc1YjRGenZtNGw1RU1LVEpwUDlhMHVKUUZvZVp4bHdabkxRYzVhSHF4bFR2UktvcDlYNlUxRjF0UzlhcGtucGI2U0kxS09GYWpSc0xycTFHVFdJVWs0YnNUODlrSVhlN0lueUwvZlZVa1lrQ3ZFY2FDME9kN245Umx5elV2ZGFOM3pYOUZzVk03TDFTaWNuK2xLbUs4MzFNMWFJeTRYRzlZSCJdfQ.eyJzdWIiOiJ1c2VyMTIzIiwiaXNzIjoiZXhhbXBsZS5jb20ifQ.SgCDl1lYVCw9MfOdBcDFXgYdzEfiWSmPlSrgw7M0HilZ3dak8zGvzD1o3BN6HLixH0vyH6hCK1S7dftl5KbO7dlTjJC59Y1UeuHmtitlxY_AJUGkPeueVsKrWmSc-220Tc168rm9h-F9Go3qmiCWypYvxa3Rj6LyCydWEuo-EcaEyCXSRO58r0Ug04BLNqDmdEUfG7c36A67EaZbw7x-QpfA0a1O2NosW8RjUBJwdw2Iomxie3-AZK9flBY3seubyBzk59uJxMv9BBVaG1DwubYN4fewmSmPgeacM2n4TRTa4EBefiVGiKV-ZoK2S_eNzqBw-0mUNVA5BouuiI4KbA"
+
+# Decode the JWT header to extract x5c
+unverified_header = jwt.get_unverified_header(received_token)
+x5c_chain = unverified_header.get("x5c", [])
+
+if not x5c_chain:
+    raise ValueError("No x5c certificate chain found in JWT header")
+
+# Rebuild the certificate chain
+certs = []
+for cert_der in x5c_chain:
+    cert_der_bytes = base64.b64decode(cert_der)
+    cert = crypto.load_certificate(crypto.FILETYPE_ASN1, cert_der_bytes)
+    certs.append(cert)
+
+# Validate the certificate chain
+store = crypto.X509Store()
+store.add_cert(root_cert)  # Add trusted root certificate
+
+store_ctx = crypto.X509StoreContext(store, certs[0])  # Validate the leaf certificate (sub-cert)
+try:
+    store_ctx.verify_certificate()
+    print("Certificate chain is valid")
+except crypto.X509StoreContextError as e:
+    raise ValueError("Certificate chain validation failed:", e)
+
+# Extract the public key from the leaf certificate (sub-cert)
+sub_public_key = certs[0].get_pubkey().to_cryptography_key()
+
+# Verify the JWT signature using the sub-cert's public key
+try:
+    decoded_payload = jwt.decode(
+        received_token,
+        sub_public_key,
+        algorithms=["RS256"],
+        options={"verify_aud": False}  # Adjust based on your requirements
+    )
+    print("JWT is valid. Payload:", decoded_payload)
+except jwt.JWTError as e:
+    raise ValueError("JWT signature verification failed:", e)

@@ -1,7 +1,7 @@
-use crate::{ffi, lwip_error::LwipError};
-use embedded_nal_async::AddrType;
+use crate::{errors::lwip_error::LwipError, ffi, util::ip_addr_to_u32};
 use futures::lock::Mutex;
 use log::info;
+use once_cell::sync::Lazy;
 use std::{
     future::Future,
     net::{IpAddr, Ipv4Addr},
@@ -9,46 +9,37 @@ use std::{
     task::{Context, Poll},
 };
 
+// default dns server
+const DEFAULT_DNS_SERVER: &str = "8.8.8.8";
+
+pub static GLOBAL_DNS_RESOLVER: Lazy<Dns> = Lazy::new(|| {
+    unsafe { ffi::env_net_dns_set_server(ip_addr_to_u32(DEFAULT_DNS_SERVER).unwrap()) };
+    Dns::new()
+});
+
 pub struct Dns {
     lock: Mutex<()>,
 }
 
 impl Dns {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             lock: Mutex::new(()),
         }
     }
 }
 
-impl embedded_nal_async::Dns for Dns {
-    type Error = LwipError;
-
-    async fn get_host_by_name(
-        &self,
-        host: &str,
-        _addr_type: AddrType,
-    ) -> Result<IpAddr, Self::Error> {
-        info!("DNS lookup: {}", host);
-        // Use a guard pattern for the lock
+impl Dns {
+    pub async fn get_host_by_name(&self, host: &str) -> Result<IpAddr, LwipError> {
         let _guard = self.lock.lock().await;
 
-        // Start DNS lookup
-        unsafe {
-            let result = ffi::env_net_dns_lookup(host.as_ptr(), host.len() as u32);
-            info!("DNS lookup result: {}", result);
-            if result != LwipError::Ok.to_code() {
-                info!("DNS lookup failed: {}", LwipError::from_code(result));
-                return Err(LwipError::from_code(result));
-            }
+        let result = unsafe { ffi::env_net_dns_lookup(host.as_ptr(), host.len() as u32) };
+
+        if result != LwipError::Ok.to_code() {
+            return Err(LwipError::from_code(result));
         }
 
-        // Poll until we get a result
         poll_dns().await
-    }
-
-    async fn get_host_by_address(&self, _: IpAddr, _: &mut [u8]) -> Result<usize, Self::Error> {
-        todo!()
     }
 }
 
@@ -62,7 +53,6 @@ async fn poll_dns() -> Result<IpAddr, LwipError> {
         fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             unsafe { ffi::env_net_rx() };
 
-            // Check DNS lookup status
             let status = unsafe { ffi::env_net_dns_lookup_poll() };
 
             match LwipError::from_code(status) {
@@ -70,6 +60,7 @@ async fn poll_dns() -> Result<IpAddr, LwipError> {
                     let result = unsafe { ffi::env_net_dns_lookup_result() };
                     let chunks = result.to_be_bytes();
                     let ip = Ipv4Addr::new(chunks[3], chunks[2], chunks[1], chunks[0]);
+                    info!("DNS lookup result: {}", ip);
                     Poll::Ready(Ok(IpAddr::V4(ip)))
                 }
                 LwipError::InProgress => {

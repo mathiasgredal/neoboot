@@ -10,8 +10,10 @@ If you want to make any changes to the U-Boot source code, it can be helpful to 
 
 To speed up builds using ccache, you can start Redis with `u-boot-redis-up`, the build system will automatically start using it, if your environment is set up correctly.
 
-## Wasm
+## Wasm Bootloader
 Designed like Novel Netware
+
+
 
 ## TODO:
 - check that env_net_setup has been called
@@ -30,6 +32,80 @@ Designed like Novel Netware
 - try on real hardware
 - ???
 - profit
+
+## Threat Model
+NeoBoot is designed to be both secure and easy to use. Due to the restricted environment of the bootloader, there are some things that limits the design choices, e.g. we don't have a trusted time source, we might not have high entropy randomness, etc.
+
+There are two primary security operating modes:
+- Standard
+- Hardened
+
+### Standard Mode
+In this mode, all encryption keys are managed by the server, which means that if the server is compromised, the attacker has access to the infrastructure. Otherwise, the standard mode operates like the hardened mode.
+
+### Hardened Mode
+In this mode, the client manages the encryption keys, based on the X.509 certificate system. The following is the design of the cryptographic system:
+1. The client generates a root certificate, consisting of a public key and a private key.
+2. The client generates 2 leaf certificates, which will be used for the primary operations:
+    - One certificate will be given to the server, and will be used to sign any data sent to the bootloader.
+    - The other certificate will be used by the client to sign any data sent to the server. This includes commands, images, updates, etc.
+3. The bootloader will verify the validity of the signature of both the server and the client leaf certificates.
+4. When the client wants to send a command to the bootloader, it will recieve a request client nonce, which it will attach to the command payload. It will the sign this payload and send it to the server, which will also sign it, and finally it will send it to the bootloader.
+5. The bootloader will verify the validity of the signature of the client, server and the request nonce.
+
+This system ensures that we cannot have replay attacks, and that the server cannot impersonate the client. Also there is not single point of failure, as the server can be compromised, but will not have the authority to sign any payload by itself. If the client is compromised, we can revoke the compromised certificate on the server, and the server will refuse to sign any payloads from the compromised client.
+
+### Payload header format
+The payload header is a JWT object, which is signed by the server, and contains a signature of the payload from the client.
+```json5
+{
+    "rpc_id": "RPC_ID",
+    "response_type": "RESPONSE_TYPE", // Can either be standard, stream, or out-of-band
+    // The payload contains the stream hash and size if response_type is stream
+    "payload": "PAYLOAD",
+    "hash": "PAYLOAD_HASH",
+    "nonce": "NONCE", // Does not exist if response_type is out-of-band
+    "client_payload_signature": "CLIENT_SIGNATURE",
+    "certificate_chain": ["INTERMEDIATE_CERTIFICATE", "ROOT_CERTIFICATE"],
+    "leaf_certificates":  {
+        "client": "CLIENT_CERTIFICATE",
+        "server": "SERVER_CERTIFICATE"
+    },
+    // Certificate roles are the roles of the leaf certificates in the certificate chain
+    // These must be signed by the outermost intermediate certificate, which created the client and server certificates
+    "certificate_roles": {
+        "client": "CLIENT_CERTIFICATE_FINGERPRINT",
+        "server": "SERVER_CERTIFICATE_FINGERPRINT"
+    }
+}
+```
+
+### Verification
+The client will verify the payload using the following steps:
+1. Verify the certificate chain
+2. Verify the certificate roles with INTERMEDIATE_CERTIFICATE
+3. Verify the leaf certificates with INTERMEDIATE_CERTIFICATE
+4. Verify the nonce with EXPECTED_NONCE, if response_type is standard or stream
+5. Verify the client payload signature with CLIENT_CERTIFICATE
+6. Verify the entire payload header using the SERVER_CERTIFICATE
+7. Verify the payload hash with SHA256
+8. Verify the stream hash with SHA256 if RESPONSE_TYPE is stream
+
+### Communication protocol
+The above payload model, can be used for communication over many different mediums, due to the flexibility of the NeoBoot bootloader. We have the following paradigms of communication:
+- RPC:
+    - Any communication involving the network, which must be signed by both a client and a server
+        - Bootloader makes a request to the server, with a generated nonce
+        - Server sends a response to the bootloader, with a client-signed payload (e.g. an image) wrapped in a server-signed payload header including the nonce from the bootloader
+- Out-of-band
+    - Out-of-band refers to when we sign a blob of data using the client certificate, and make it available to the bootloader through some means(e.g. a file on the filesystem, and update file, etc.)
+
+### Limitations
+- Physical attacks are not considered in this threat model, e.g. if you can modify the bootloader, you can just change the root public key and server hostname. Integrity must be ensured by UEFI Secure Boot.
+- If both client and server certificates are compromised, then there is not way to revoke access without updating the bootloader
+- If the above happens, then we can still salvage the situation as long as we control the dns server, as we can point it to a trusted server with a different server certificate, and update all the clients to explicitly ignore the compromised server certificate
+- If either the root certificate is compromised or the dns, server and client certificates are compromised, then you are SOL
+
 
 ## Logbook
 
@@ -60,3 +136,21 @@ It seems that we can get hyper and rustls to work. But there is an issue with th
 
 ### 2025-03-01
 Rusttls and hyper now work together.
+
+### 2025-03-14
+Brainstorm Commands:
+- help
+- chain
+- date
+- getenv
+- help
+- ifconfig
+- load
+- ping
+- print
+- quit
+- stats
+- wget
+
+### 2025-03-15
+Implement command dispatch for the console service.

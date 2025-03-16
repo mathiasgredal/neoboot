@@ -1,4 +1,4 @@
-From 41ed53e35a03a279fc54420f4a6da456468b3d1d Mon Sep 17 00:00:00 2001
+From f00fd932c1494b8365860f2f73a5b1bf652f8891 Mon Sep 17 00:00:00 2001
 From: Mathias Gredal <mathiasgredal@icloud.com>
 Date: Sun, 23 Feb 2025 23:28:03 +0100
 Subject: [PATCH 12/12] Testing
@@ -7,12 +7,12 @@ Subject: [PATCH 12/12] Testing
  cmd/wasm.c                         |  2 +-
  configs/qemu-x86_64_wasm_defconfig |  2 +-
  include/wasm3/m3_config.h          |  2 +-
- include/wasm_ffi/wasm_sys.h        | 19 +++++++++++
+ include/wasm_ffi/wasm_sys.h        | 26 ++++++++++++++
  lib/wasm3/m3_compile.c             |  2 ++
- lib/wasm_ffi/wasm_ffi.c            | 52 ++++++++++++++++--------------
- lib/wasm_ffi/wasm_socket.c         | 23 +++++++------
- lib/wasm_ffi/wasm_sys.c            | 28 ++++++++++++++++
- 8 files changed, 91 insertions(+), 39 deletions(-)
+ lib/wasm_ffi/wasm_ffi.c            | 55 ++++++++++++++++--------------
+ lib/wasm_ffi/wasm_socket.c         | 23 ++++++-------
+ lib/wasm_ffi/wasm_sys.c            | 35 ++++++++++++++++++-
+ 8 files changed, 106 insertions(+), 41 deletions(-)
 
 diff --git a/cmd/wasm.c b/cmd/wasm.c
 index 38a3cc03..3684516c 100644
@@ -54,10 +54,10 @@ index 63f64eda..f57afbca 100644
  
  #ifndef d_m3MaxLinearMemoryPages
 diff --git a/include/wasm_ffi/wasm_sys.h b/include/wasm_ffi/wasm_sys.h
-index 8f13c4f5..0dd88354 100644
+index 8f13c4f5..a402fdcb 100644
 --- a/include/wasm_ffi/wasm_sys.h
 +++ b/include/wasm_ffi/wasm_sys.h
-@@ -53,4 +53,23 @@ m3ApiRawFunction(env_key_pressed);
+@@ -53,4 +53,30 @@ m3ApiRawFunction(env_key_pressed);
   */
  m3ApiRawFunction(env_now);
  
@@ -80,6 +80,13 @@ index 8f13c4f5..0dd88354 100644
 + */
 +m3ApiRawFunction(wasi_snapshot_preview1_clock_time_get);
 +
++/*
++ * Yield the current thread to allow other threads to run.
++ *
++ * This is a no-op on the WebAssembly platform.
++ */
++m3ApiRawFunction(wasi_snapshot_preview1_sched_yield);
++
  #endif /* __WASM_SYS_H__ */
 diff --git a/lib/wasm3/m3_compile.c b/lib/wasm3/m3_compile.c
 index 08abf473..38105284 100644
@@ -95,7 +102,7 @@ index 08abf473..38105284 100644
              }
          }
 diff --git a/lib/wasm_ffi/wasm_ffi.c b/lib/wasm_ffi/wasm_ffi.c
-index ac22d183..10b9a5fe 100644
+index ac22d183..5f238ffe 100644
 --- a/lib/wasm_ffi/wasm_ffi.c
 +++ b/lib/wasm_ffi/wasm_ffi.c
 @@ -8,11 +8,11 @@
@@ -112,7 +119,7 @@ index ac22d183..10b9a5fe 100644
                                                                                                                         \
          /* Handle errors from the linking process */                                                                   \
          if (result != m3Err_none && result != m3Err_functionLookupFailed)                                              \
-@@ -22,37 +22,41 @@
+@@ -22,37 +22,42 @@
          }                                                                                                              \
      } while (0)
  
@@ -124,12 +131,14 @@ index ac22d183..10b9a5fe 100644
 -    LINK_RAW_FUNCTION(module, "env_print", "v(*i)", &env_print);
 -    LINK_RAW_FUNCTION(module, "env_key_pressed", "i()", &env_key_pressed);
 -    LINK_RAW_FUNCTION(module, "env_now", "I()", &env_now);
+-
 +    LINK_RAW_FUNCTION(module, "env", "env_print", "v(*i)", &env_print);
 +    LINK_RAW_FUNCTION(module, "env", "env_key_pressed", "i()", &env_key_pressed);
 +    LINK_RAW_FUNCTION(module, "env", "env_now", "I()", &env_now);
 +    LINK_RAW_FUNCTION(module, "wasi_snapshot_preview1", "random_get", "i(*i)", &wasi_snapshot_preview1_random_get);
 +    LINK_RAW_FUNCTION(module, "wasi_snapshot_preview1", "clock_time_get", "i(iI*)", &wasi_snapshot_preview1_clock_time_get);
- 
++    LINK_RAW_FUNCTION(module, "wasi_snapshot_preview1", "sched_yield", "i()", &wasi_snapshot_preview1_sched_yield);
++    
      /* Network functions */
 -    LINK_RAW_FUNCTION(module, "env_net_setup", "i()", &net_setup);
 -    LINK_RAW_FUNCTION(module, "env_net_teardown", "i()", &net_teardown);
@@ -267,7 +276,7 @@ index 1d006705..8baf1894 100644
  
      return read_len;
 diff --git a/lib/wasm_ffi/wasm_sys.c b/lib/wasm_ffi/wasm_sys.c
-index 46f4aefc..ae36de69 100644
+index 46f4aefc..5403795d 100644
 --- a/lib/wasm_ffi/wasm_sys.c
 +++ b/lib/wasm_ffi/wasm_sys.c
 @@ -3,6 +3,7 @@
@@ -278,10 +287,12 @@ index 46f4aefc..ae36de69 100644
  #include <stdio.h>
  #include <time.h>
  #include <wasm_ffi/wasm_sys.h>
-@@ -52,4 +53,31 @@ m3ApiRawFunction(env_now)
+@@ -52,4 +53,36 @@ m3ApiRawFunction(env_now)
  
      /* Return the retrieved time */
      m3ApiReturn(now);
+-}
+\ No newline at end of file
 +}
 +
 +m3ApiRawFunction(wasi_snapshot_preview1_random_get) {
@@ -309,8 +320,12 @@ index 46f4aefc..ae36de69 100644
 +    *time = get_timer(0);
 +
 +    m3ApiReturn(0);
- }
-\ No newline at end of file
++}
++
++m3ApiRawFunction(wasi_snapshot_preview1_sched_yield) {
++    m3ApiReturnType  (uint32_t);
++    m3ApiReturn(0);
++}
 -- 
 2.39.3 (Apple Git-146)
 

@@ -1,89 +1,107 @@
+use commands::CommandDispatcher;
+use executor::Executor;
+use services::ServiceRegistry;
+
 mod asyncio;
+mod commands;
+mod errors;
 mod executor;
 mod ffi;
-mod hyper_tls;
-mod logging;
-mod lwip_error;
-mod panic;
-mod tls;
+mod services;
 mod util;
-use asyncio::sleep_ms;
-use executor::Executor;
-use futures_lite::StreamExt;
-use getrandom::register_custom_getrandom;
-use hyper_tls::test_hyper_tls;
-use log::info;
-use logging::init_with_level;
-use rand::{RngCore, SeedableRng};
-use util::ip_addr_to_u32;
-
-async fn mainloop_2() {
-    info!("Creating client");
-    let mut client = asyncio::http::client::Client::new();
-    info!("Making request");
-    let response = client.get("http://10.0.2.2:3000/out").await;
-
-    info!("Got response");
-    if response.is_err() {
-        log::error!("Failed to get response: {}", response.err().unwrap());
-        return;
-    }
-
-    let mut stream = response.unwrap().stream().await;
-
-    let mut total_bytes = 0;
-    while let Some(chunk) = stream.next().await {
-        if chunk.is_ok() {
-            total_bytes += chunk.unwrap().len();
-            log::info!("Total bytes: {}", total_bytes);
-        }
-        // log::info!(
-        //     "Chunk: {}",
-        //     String::from_utf8_lossy(chunk.unwrap().to_vec().as_slice())
-        // );
-    }
-
-    info!("Done");
-
-    // log::info!("Response: {}", response.unwrap().text().await.unwrap());
-}
-
-pub fn unsecure_getrandom(buf: &mut [u8]) -> Result<(), getrandom::Error> {
-    let seed = 1234;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-    rng.fill_bytes(buf);
-    Ok(())
-}
 
 #[no_mangle]
 pub extern "C" fn main() {
-    {
-        panic::set_once();
-        init_with_level(log::Level::Trace).unwrap();
-        register_custom_getrandom!(unsecure_getrandom);
-        let setup_result = unsafe { ffi::env_net_setup() };
-        if setup_result != 0 {
-            log::error!("Failed to setup network: {}", setup_result);
-            return;
-        }
-        unsafe { ffi::env_net_dns_set_server(ip_addr_to_u32("8.8.8.8").unwrap()) };
-        let executor = Executor::new();
+    util::panic::set_once();
+    util::logging::init_with_level(log::Level::Info).unwrap();
 
-        let mut executor_2 = executor.clone();
-        executor.spawn(async move {
-            sleep_ms(20000).await;
-            executor_2.exit();
-        });
-
-        let executor_3 = executor.clone();
-        executor.spawn(async move {
-            // test_hyper(executor_3).await;
-            test_hyper_tls(executor_3).await;
-            // mainloop_2().await;
-        });
-
-        executor.run();
-        info!("Exiting...");
+    // Setup network
+    let setup_result = unsafe { ffi::env_net_setup() };
+    if setup_result != 0 {
+        log::error!("Failed to setup network: {}", setup_result);
+        return;
     }
+
+    // Setup executor
+    let executor = Executor::new();
+    let dispatcher = CommandDispatcher::default();
+
+    // Register services
+    let service_registry = ServiceRegistry::new();
+    service_registry.register_all(vec![
+        // Box::new(services::boot::BootService::new()),
+        Box::new(services::console::ConsoleService::new(dispatcher.clone())),
+        Box::new(services::server::ServerService::new(dispatcher.clone())),
+    ]);
+
+    // Spawn services
+    if let Some(e) = service_registry.spawn_all(&executor) {
+        log::error!("Failed to spawn services: {}", e);
+    }
+
+    // Run executor
+    executor.run_forever();
+
+    // Teardown network
     unsafe { ffi::env_net_teardown() };
 }
+
+// let data = serialize::write_message_to_words(&message);
+// println!("{:?}", data);
+
+// let mut executor_2 = executor.clone();
+// executor.spawn(async move {
+//     sleep_ms(1000000).await;
+//     executor_2.exit();
+// });
+
+// let executor_3 = executor.clone();
+// executor.spawn(async move {
+//     mainloop(executor_3).await;
+// });
+
+// let executor_4 = executor.clone();
+// executor.spawn(async move {
+//     let _ = run_server(&executor_4).await;
+// });
+
+// executor.run();
+// info!("Exiting...");
+
+// async fn mainloop(executor: Executor) {
+//     let mut client = asyncio::http::client::Client::new(executor);
+//     let response = client
+//         .request(
+//             http::Method::GET,
+//             "https://google.com",
+//             RequestConfig::default(),
+//         )
+//         .await;
+
+//     if response.is_err() {
+//         log::error!("Failed to get response: {}", response.err().unwrap());
+//         return;
+//     }
+
+//     let mut response = response.unwrap();
+//     info!("Metadata: {:?}", response.metadata);
+
+//     info!("Response: {}", response.text().await.unwrap());
+
+//     // let mut stream = response.unwrap().stream().await;
+
+//     // while let Some(chunk) = stream.next().await {
+//     //     if chunk.is_err() {
+//     //         log::error!("Failed to get chunk: {}", chunk.err().unwrap());
+//     //         return;
+//     //     }
+
+//     //     let chunk = chunk.unwrap();
+//     //     log::info!(
+//     //         "Chunk: {}",
+//     //         String::from_utf8_lossy(chunk.to_vec().as_slice())
+//     //     );
+//     // }
+
+//     info!("Done");
+// }

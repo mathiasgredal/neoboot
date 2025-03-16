@@ -46,7 +46,7 @@ impl Executor {
     }
 
     /// Run the executor until the exit flag is set.
-    pub fn run(&self) {
+    pub fn run_forever(&self) {
         while let Ok(task) = self.inner.borrow().scheduled.recv() {
             task.poll();
 

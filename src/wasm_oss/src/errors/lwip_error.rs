@@ -1,8 +1,6 @@
 use std::error::Error;
 use std::fmt;
 
-use embedded_io::ErrorKind;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LwipError {
     /// No error, everything OK
@@ -116,30 +114,6 @@ impl fmt::Display for LwipError {
 }
 
 impl Error for LwipError {}
-
-impl embedded_io::Error for LwipError {
-    fn kind(&self) -> ErrorKind {
-        match *self {
-            LwipError::Ok => ErrorKind::Other,
-            LwipError::OutOfMemory => ErrorKind::OutOfMemory,
-            LwipError::Buffer => ErrorKind::Other,
-            LwipError::Timeout => ErrorKind::TimedOut,
-            LwipError::Routing => ErrorKind::Other,
-            LwipError::InProgress => ErrorKind::Other,
-            LwipError::InvalidValue => ErrorKind::InvalidData,
-            LwipError::WouldBlock => ErrorKind::Other,
-            LwipError::AddressInUse => ErrorKind::AddrInUse,
-            LwipError::AlreadyConnecting => ErrorKind::Other,
-            LwipError::AlreadyConnected => ErrorKind::Other,
-            LwipError::NotConnected => ErrorKind::NotConnected,
-            LwipError::NetworkInterface => ErrorKind::Other,
-            LwipError::ConnectionAborted => ErrorKind::ConnectionAborted,
-            LwipError::ConnectionReset => ErrorKind::ConnectionReset,
-            LwipError::ConnectionClosed => ErrorKind::NotConnected,
-            LwipError::IllegalArgument => ErrorKind::InvalidInput,
-        }
-    }
-}
 
 impl Into<std::io::Error> for LwipError {
     fn into(self) -> std::io::Error {

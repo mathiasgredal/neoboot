@@ -2,10 +2,16 @@
 resolver = "2"
 members = [
     "src/wasm_oss",
+    "src/proto_rs",
 ]
 
 [profile.release]
-opt-level = 2
+opt-level = "z"
+debug = false
+strip = true
+
 
 [profile.dev]
-opt-level = 2
+opt-level = "z"
+debug = false
+strip = true
