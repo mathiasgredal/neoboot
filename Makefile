@@ -17,6 +17,7 @@ include tools/shared.mk
 include $(SRC_DIR)/u-boot/Makefile
 include $(SRC_DIR)/wasm_oss/Makefile
 include $(SRC_DIR)/proxyclient/Makefile
+include $(SRC_DIR)/linux/Makefile
 
 # ================================================
 #  T A R G E T S                                 #
@@ -25,6 +26,8 @@ include $(SRC_DIR)/proxyclient/Makefile
 .PHONY: u-boot rust
 
 u-boot: u-boot-amend u-boot-patches wasm_oss_dist u-boot-aarch64-run-host
+
+linux: linux-amend linux-patches linux-aarch64-dist
 
 rust: wasm_oss_dist
 

@@ -160,3 +160,12 @@ Observed a potential bug, where posting a body from requests using a stream iter
 
 ### 2025-03-19
 Chainload now works. But there is a ref cycle bug which causes resource leaks for ports.
+
+### 2025-03-20
+Fixed the ref cycle bug, and removed a bunch of reference counters replacing them with lifetimes.
+
+Next steps are:
+- Load linux kernel, initramfs and device tree
+- Embed and run the wasm payload into u-boot using mkimage FIT format
+- Embed and load the configuration file into u-boot
+- Validate hash of the chainload payload

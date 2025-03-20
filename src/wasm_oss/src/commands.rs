@@ -26,6 +26,8 @@ mod print;
 mod quit;
 mod status;
 
+type HandleStream<'a> = Pin<Box<dyn Stream<Item = Result<Bytes, hyper::Error>> + Send + 'a>>;
+
 #[derive(PartialEq)]
 enum CommandRole {
     Console, // Defines a command which
@@ -46,7 +48,7 @@ trait CommandHandler {
         &self,
         dispatcher: &CommandDispatcher<'a>,
         request: &client_request_inner::Payload,
-        stream: Option<Pin<Box<dyn Stream<Item = Result<Bytes, hyper::Error>> + Send + 'a>>>,
+        stream: Option<HandleStream<'a>>,
     ) -> Pin<Box<dyn Future<Output = client_response_inner::Payload> + Send + 'a>>;
     fn response_as_string(&self, response: &client_response_inner::Payload) -> String;
     fn on_shutdown(&self);
@@ -131,7 +133,7 @@ impl<'a> CommandDispatcher<'a> {
     pub async fn dispatch(
         &self,
         request: &ClientRequest,
-        stream: Option<Pin<Box<dyn Stream<Item = Result<Bytes, hyper::Error>> + Send + 'a>>>,
+        stream: Option<HandleStream<'a>>,
     ) -> Result<ClientResponse, Box<dyn Error>> {
         // TODO: Handle signature verification
 

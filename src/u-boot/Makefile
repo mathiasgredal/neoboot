@@ -27,7 +27,7 @@ U_BOOT_COMPILE_COMMANDS_IMAGE_TAG 	?= $(U_BOOT_TAG_BASE)-compile-commands:dev
 #  U-Boot Lifecycle                              #
 # ================================================
 
-.PHONY: u-boot-vendor u-boot-patches u-boot-ide u-boot-redis-up u-boot-redis-down u-boot-amend
+.PHONY: u-boot-vendor u-boot-patches u-boot-ide u-boot-amend
 
 u-boot-vendor: vendor/u-boot ## Vendor u-boot source code and apply patches
 vendor/u-boot:
@@ -67,12 +67,6 @@ u-boot-ide: u-boot-patches u-boot-vendor ## Make u-boot compile-commands.json fo
 			-e 's#-isystem /usr/lib/gcc/[^ ]*/include##g' \
             -e 's#/u-boot#$(shell realpath $(U_BOOT_VENDOR_DIR))#g' \
 			> $(U_BOOT_VENDOR_DIR)/compile_commands.json
-
-u-boot-redis-up: ## Start redis cache for u-boot
-	$(DOCKER) run -d --rm --name u-boot-redis-cache -p 6379:6379 redis:alpine
-
-u-boot-redis-down: ## Stop redis cache for u-boot
-	$(DOCKER) stop u-boot-redis-cache
 
 u-boot-amend: ## Amend HEAD commit in u-boot vendor directory
 	@printf "$(COLOR_BLUE)🚀 Amending U-Boot vendor directory...$(COLOR_RESET)\n"

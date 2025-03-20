@@ -77,5 +77,13 @@ help: ## Show this help message
 	@printf "$(COLOR_BOLD)Available targets:$(COLOR_RESET)\n"
 	@awk 'BEGIN {FS = ":.*?## "}; /^[a-zA-Z_-]+:.*?## .*$$/ {printf "  $(COLOR_GREEN)%-20s$(COLOR_RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
+.PHONY: redis-up
+redis-up: ## Start redis cache
+	$(DOCKER) run -d --rm --name neoboot-redis-cache -p 6379:6379 redis:alpine
+
+.PHONY: redis-down
+redis-down: ## Stop redis cache
+	$(DOCKER) stop neoboot-redis-cache
+
 # Default target if none specified
 .DEFAULT_GOAL := help

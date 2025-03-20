@@ -28,6 +28,7 @@ pub struct Executor<'a> {
     inner: Rc<RefCell<ExecutorInner<'a>>>,
 }
 
+// SAFETY: Executor is single-threaded, so it is safe to implement Sync and Send.
 unsafe impl Sync for Executor<'_> {}
 unsafe impl Send for Executor<'_> {}
 

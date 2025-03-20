@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../vendor/u-boot"
+		},
+		{
+			"path": "../vendor/linux"
 		}
 	],
 	"settings": {
