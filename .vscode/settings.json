@@ -1,7 +1,3 @@
 {
-    "explorer.excludeGitIgnore": false,
-    "search.useParentIgnoreFiles": false,
-    "search.useIgnoreFiles": false,
-    "rust-analyzer.cargo.targetDir": "build/cargo",
-    "editor.formatOnSave": true
+    "python.defaultInterpreterPath": "build/venv/bin/python"
 }

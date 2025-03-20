@@ -1,11 +1,12 @@
-use super::{CommandHandler, CommandRole};
-use log::info;
+use super::{CommandDispatcher, CommandHandler, CommandRole};
+use bytes::Bytes;
+use futures::Stream;
 use proto_rs::schema::{
     client_request::client_request_inner,
     client_response::client_response_inner::{self},
     NonceClientRequest, NonceClientResponse,
 };
-use std::{collections::HashMap, error::Error};
+use std::{collections::HashMap, error::Error, future::Future, pin::Pin};
 
 pub struct NonceCommandHandler;
 
@@ -31,11 +32,17 @@ impl CommandHandler for NonceCommandHandler {
         ))
     }
 
-    fn handle(&self, _: &client_request_inner::Payload) -> client_response_inner::Payload {
-        info!("Nonce command received");
-        return client_response_inner::Payload::NonceResponse(NonceClientResponse {
-            nonce: "".to_string(),
-        });
+    fn handle<'a>(
+        &self,
+        _: &CommandDispatcher,
+        _: &client_request_inner::Payload,
+        _: Option<Pin<Box<dyn Stream<Item = Result<Bytes, hyper::Error>> + Send + 'a>>>,
+    ) -> Pin<Box<dyn Future<Output = client_response_inner::Payload> + Send + 'a>> {
+        Box::pin(async move {
+            client_response_inner::Payload::NonceResponse(NonceClientResponse {
+                nonce: "".to_string(),
+            })
+        })
     }
 
     fn response_as_string(&self, response: &client_response_inner::Payload) -> String {
@@ -46,4 +53,6 @@ impl CommandHandler for NonceCommandHandler {
             _ => "".to_string(),
         }
     }
+
+    fn on_shutdown(&self) {}
 }

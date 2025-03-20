@@ -1,63 +1,46 @@
 use crate::executor::Executor;
-use log::error;
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::future::Future;
+use std::pin::Pin;
 
 pub mod boot;
 pub mod console;
 pub mod server;
 
-pub trait Service {
+pub trait Service<'a> {
     fn name(&self) -> &'static str;
-    fn init(&self) -> Result<(), Box<dyn std::error::Error>>;
-    fn run(&self, executor: &Executor) -> Result<(), Box<dyn std::error::Error>>;
+    fn run(self: Box<Self>, executor: Executor<'a>) -> Pin<Box<dyn Future<Output = ()> + 'a>>;
 }
 
 #[derive(Default)]
-pub struct ServiceRegistry {
-    services: Rc<RefCell<HashMap<&'static str, Rc<dyn Service>>>>,
+pub struct ServiceRegistry<'a> {
+    services: HashMap<&'static str, Box<dyn Service<'a> + 'a>>,
 }
 
-impl ServiceRegistry {
+impl<'a> ServiceRegistry<'a> {
     pub fn new() -> Self {
         Self {
-            services: Rc::new(RefCell::new(HashMap::new())),
+            services: HashMap::new(),
         }
     }
 
-    pub fn register_all(&self, services: Vec<Box<dyn Service>>) {
-        for service in services {
-            let result = self.register(service);
-            if result.is_err() {
-                log::error!("Failed to register service: {}", result.err().unwrap());
-            }
-        }
-    }
-
-    pub fn register(&self, service: Box<dyn Service>) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn register(&mut self, service: impl Service<'a> + 'a) {
         let name = service.name();
-        let mut services = self.services.borrow_mut();
 
-        if services.contains_key(name) {
-            return Err(format!("Service '{}' is already registered", name).into());
+        if self.services.contains_key(name) {
+            log::error!("Service '{}' is already registered", name);
         }
 
-        service.init()?;
-        services.insert(name, service.into());
-        Ok(())
+        self.services.insert(name, Box::new(service));
     }
 
-    pub fn spawn_all(&self, executor: &Executor) -> Option<Box<dyn std::error::Error>> {
-        let services = self.services.borrow();
+    pub fn spawn_all(self, executor: &Executor<'a>) {
+        let services = self.services;
+        let services = services.into_values();
 
-        for (name, service) in services.iter() {
-            if let Err(e) = service.run(executor) {
-                error!("Service '{}' failed: {}", name, e);
-                return Some(e);
-            }
+        for service in services {
+            let run_fut = service.run(executor.clone());
+            executor.spawn(run_fut);
         }
-
-        None
     }
 }

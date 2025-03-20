@@ -1,7 +1,7 @@
 From 0d581b391b30c1211cbc9e6735d8f9e8d7593493 Mon Sep 17 00:00:00 2001
 From: Mathias Gredal <mathiasgredal@icloud.com>
 Date: Thu, 30 Jan 2025 01:59:19 +0100
-Subject: [PATCH 09/12] TCP read/write
+Subject: [PATCH 09/13] TCP read/write
 
 ---
  Kconfig                           |  13 +-

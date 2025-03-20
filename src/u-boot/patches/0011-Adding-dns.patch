@@ -1,7 +1,7 @@
 From 00cb7f74802ae4fe07ecceb4c81db3b05a8a3d36 Mon Sep 17 00:00:00 2001
 From: Mathias Gredal <mathiasgredal@icloud.com>
 Date: Thu, 20 Feb 2025 23:26:02 +0100
-Subject: [PATCH 11/12] Adding dns
+Subject: [PATCH 11/13] Adding dns
 
 ---
  Kconfig                           |   4 +-

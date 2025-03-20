@@ -3,6 +3,10 @@ unsafe extern "C" {
     pub fn env_print(s: *const u8, len: u32); // Print string
     pub fn env_key_pressed() -> i32; // Returns keycode or -1 if no key
     pub fn env_now() -> u64; // Get current timestamp
+    pub fn env_malloc(size: u32) -> u64; // Allocate memory
+    pub fn env_free(ptr: u64) -> i32; // Free memory
+    pub fn env_memcpy(src: *const u8, dest: u64, len: u32) -> i32; // Copy memory
+    pub fn env_set_wasm_chainload(src: u64, len: u32); // Set WASM chainload source
 
     // Network
     pub fn env_net_setup() -> i32;

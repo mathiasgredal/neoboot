@@ -16,6 +16,7 @@ include tools/shared.mk
 
 include $(SRC_DIR)/u-boot/Makefile
 include $(SRC_DIR)/wasm_oss/Makefile
+include $(SRC_DIR)/proxyclient/Makefile
 
 # ================================================
 #  T A R G E T S                                 #
@@ -26,6 +27,8 @@ include $(SRC_DIR)/wasm_oss/Makefile
 u-boot: u-boot-amend u-boot-patches wasm_oss_dist u-boot-aarch64-run-host
 
 rust: wasm_oss_dist
+
+py: proxyclient_run
 
 # ================================================
 #  "Makefiles are the ultimate abstraction layer"

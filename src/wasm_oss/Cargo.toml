@@ -16,6 +16,8 @@ serde_json = "1.0.138"
 proto_rs = { path = "../proto_rs" }
 prost = "0.13.5"
 prost-types = "0.13.5"
+base64 = "0.22.1"
+sha2 = "0.10.8"
 
 # http
 url = "2.5.4"

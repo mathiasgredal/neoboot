@@ -4,7 +4,7 @@ Welcome to the NeoBoot source code monorepo.
 
 ## Getting Started
 
-To get started, make sure you have Docker or Podman installed and running. Then build U-Boot using `make u-boot`, this will clone down the U-Boot source code and place it in `vendor/u-boot`, with the NeoBoot patches applied. It will then build the bootloader for the default arch(x86_64), and the wasm spl, and finally boot them using QEMU using Docker. The resulting binaries are placed in `dist/(arch)`.
+To get started, make sure you have Docker or Podman installed and running. Then build U-Boot using `make u-boot`, this will clone down the U-Boot source code and place it in `vendor/u-boot`, with the NeoBoot patches applied. It will then build the bootloader for the default arch(x86_64), and the wasm payload, and finally boot them using QEMU using Docker. The resulting binaries are placed in `dist/(arch)`.
 
 If you want to make any changes to the U-Boot source code, it can be helpful to have the compile-commands.json file, which will be used by clangd. To generate this file run `make u-boot-ide`. After making some changes and building it, then build system will export the patch set and place it in the source tree, ensuring deterministic and declarative builds.
 
@@ -154,3 +154,9 @@ Brainstorm Commands:
 
 ### 2025-03-15
 Implement command dispatch for the console service.
+
+### 2025-03-18
+Observed a potential bug, where posting a body from requests using a stream iterator causes the network layer to hang.
+
+### 2025-03-19
+Chainload now works. But there is a ref cycle bug which causes resource leaks for ports.

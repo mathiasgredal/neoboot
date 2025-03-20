@@ -94,7 +94,7 @@ u-boot-aarch64-build:
 		--build-arg DEFCONFIG=qemu_arm64_wasm_defconfig \
 		$(U_BOOT_DIR)
 
-u-boot-aarch64-dist: u-boot-aarch64-build
+u-boot-aarch64-dist: u-boot-aarch64-build $(DIST_DIR)
 	@mkdir -p $(DIST_DIR)/u-boot/aarch64
 	@$(DOCKER) run -it --rm --privileged -v $(DIST_DIR):/dist $(U_BOOT_AARCH64_IMAGE_TAG) \
 		cp -r /u-boot/. /dist/u-boot/aarch64
@@ -119,7 +119,7 @@ u-boot-arm-build:
 		--build-arg DEFCONFIG=qemu_arm_defconfig \
 		$(U_BOOT_DIR)
 
-u-boot-arm-dist: u-boot-arm-build	
+u-boot-arm-dist: u-boot-arm-build $(DIST_DIR)
 	@mkdir -p $(DIST_DIR)/u-boot/arm
 	@$(DOCKER) run -it --rm --privileged -v $(DIST_DIR):/dist $(U_BOOT_ARM_IMAGE_TAG) \
 		cp -r /u-boot/. /dist/u-boot/arm
@@ -144,7 +144,7 @@ u-boot-x86_64-build:
 		--build-arg DEFCONFIG=qemu-x86_64_wasm_defconfig \
 		$(U_BOOT_DIR)
 
-u-boot-x86_64-dist: u-boot-x86_64-build
+u-boot-x86_64-dist: u-boot-x86_64-build $(DIST_DIR)
 	@mkdir -p $(DIST_DIR)/u-boot/x86_64
 	@$(DOCKER) run -it --rm --privileged -v $(DIST_DIR):/dist $(U_BOOT_X86_64_IMAGE_TAG) \
 		cp -r /u-boot/. /dist/u-boot/x86_64

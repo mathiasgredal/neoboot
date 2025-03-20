@@ -10,7 +10,7 @@ use crate::asyncio::http::stream::AnyHttpStream;
 use crate::asyncio::net::TcpListener;
 use crate::executor::Executor;
 
-pub async fn run_server(executor: &Executor) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run_server<'a>(executor: &Executor<'a>) -> Result<(), Box<dyn std::error::Error>> {
     let addr = Ipv4Addr::UNSPECIFIED;
     let port = 8080;
 

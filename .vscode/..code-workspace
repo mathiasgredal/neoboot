@@ -1,0 +1,23 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"path": "../vendor/u-boot"
+		}
+	],
+	"settings": {
+		"window.title": "${dirty}${activeEditorShort}${separator}${folderName}${separator}${appName}",
+		"explorer.excludeGitIgnore": false,
+		"search.useParentIgnoreFiles": false,
+		"search.useIgnoreFiles": false,
+		"rust-analyzer.cargo.targetDir": "${workspaceFolder}/build/cargo",
+		"editor.formatOnSave": true,
+		"files.exclude": {
+			"**/*.egg-info": true,
+			"**/*.pyc": true,
+			"**/__pycache__": true,
+		},
+	}
+}

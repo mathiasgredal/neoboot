@@ -10,69 +10,84 @@ package schema;
 // These structures define the requests made by the user to the client
 
 // Help command (cmdPattern: "help")
-message HelpClientRequest {
-}
+message HelpClientRequest {}
 
-message HelpClientResponse {
-    string message = 1;
-}
+message HelpClientResponse { string message = 1; }
 
 // Print command (cmdPattern: "print <message>")
-message PrintClientRequest {
-    string message = 1;
-}
+message PrintClientRequest { string message = 1; }
 
-message PrintClientResponse {
-    string message = 1;
-}
+message PrintClientResponse { string message = 1; }
 
 // Nonce command (cmdPattern: "nonce")
-message NonceClientRequest {
+message NonceClientRequest {}
+
+message NonceClientResponse { string nonce = 1; }
+
+// Quit command (cmdPattern: "quit")
+message QuitClientRequest {}
+
+message QuitClientResponse {}
+
+// Status command (cmdPattern: "status")
+message StatusClientRequest {}
+
+message StatusClientResponse {}
+
+// Chain command (cmdPattern: "chain")
+message ChainClientRequest {
+  int32 payload_size = 1;
+  string payload_sha256 = 2;
+  // TODO: Eventually we will want to add the configuration here too
 }
 
-message NonceClientResponse {
-    string nonce = 1;
-}
+message ChainClientResponse {}
+
+// Error response
+message ErrorClientResponse { string error = 1; }
 
 // Client request
 message ClientRequest {
-    message ClientRequestInner {
-        oneof payload {
-            HelpClientRequest help_request = 1;
-            PrintClientRequest print_request = 2;
-            NonceClientRequest nonce_request = 3;
-        }
+  message ClientRequestInner {
+    // A unique identifier for the request, used to prevent replay attacks
+    string nonce = 1;
 
-        // A unique identifier for the request, used to prevent replay attacks
-        string nonce = 4;
+    oneof payload {
+      HelpClientRequest help_request = 2;
+      PrintClientRequest print_request = 3;
+      NonceClientRequest nonce_request = 4;
+      QuitClientRequest quit_request = 5;
+      ChainClientRequest chain_request = 6;
+      StatusClientRequest status_request = 7;
     }
+  }
 
-    // The inner payload of the client request
-    ClientRequestInner inner = 1;
+  // The inner payload of the client request
+  ClientRequestInner inner = 1;
 
-    oneof signature_type {
-        FullSignature signature = 2;
-    }
+  oneof signature_type { FullSignature signature = 2; }
 }
 
 message ClientResponse {
-    message ClientResponseInner {
-        oneof payload {
-            HelpClientResponse help_response = 1;
-            PrintClientResponse print_response = 2;
-            NonceClientResponse nonce_response = 3;
-        }
+  message ClientResponseInner {
+    // The same nonce as in the client request
+    string nonce = 1;
 
-        // The same nonce as in the client request
-        string nonce = 4;
+    oneof payload {
+      HelpClientResponse help_response = 2;
+      PrintClientResponse print_response = 3;
+      NonceClientResponse nonce_response = 4;
+      QuitClientResponse quit_response = 5;
+      ChainClientResponse chain_response = 6;
+      StatusClientResponse status_response = 7;
+      ErrorClientResponse error_response = 8;
     }
+  }
 
-    // The inner payload of the client response
-    ClientResponseInner inner = 1;
+  // The inner payload of the client response
+  ClientResponseInner inner = 1;
 
-    oneof signature_type {
-        ClientSignature signature = 2;
-    }
+  oneof signature_type { ClientSignature signature = 2; }
 }
 
 // Server structures
@@ -80,117 +95,109 @@ message ClientResponse {
 
 // Whoami command
 message WhoamiServerRequest {
-    // Empty message
+  // Empty message
 }
 
-message WhoamiServerResponse {
-    string whoami = 1;
-}
+message WhoamiServerResponse { string whoami = 1; }
 
 // Nonce command
 message NonceServerRequest {
-    // Empty message
+  // Empty message
 }
 
-message NonceServerResponse {
-    string nonce = 1;
-}
+message NonceServerResponse { string nonce = 1; }
 
 // Server request
 message ServerRequest {
-    message ServerRequestInner {
-        oneof payload {
-            NonceServerRequest nonce_request = 1;
-            WhoamiServerRequest whoami_request = 2;
-        }
-
-        // The nonce of the server request
-        string nonce = 3;
+  message ServerRequestInner {
+    oneof payload {
+      NonceServerRequest nonce_request = 1;
+      WhoamiServerRequest whoami_request = 2;
     }
 
-    // The inner payload of the server request
-    ServerRequestInner inner = 1;
+    // The nonce of the server request
+    string nonce = 3;
+  }
 
-    oneof signature_type {
-        ClientSignature signature = 2;
-    }
+  // The inner payload of the server request
+  ServerRequestInner inner = 1;
+
+  oneof signature_type { ClientSignature signature = 2; }
 }
 
 message ServerResponse {
-    message ServerResponseInner {
-        oneof payload {
-            NonceServerResponse nonce_response = 1;
-            WhoamiServerResponse whoami_response = 2;
-        }
-
-        // The nonce of the client response
-        string nonce = 3;
+  message ServerResponseInner {
+    oneof payload {
+      NonceServerResponse nonce_response = 1;
+      WhoamiServerResponse whoami_response = 2;
     }
 
-    // The inner payload of the server response
-    ServerResponseInner inner = 1;
+    // The nonce of the client response
+    string nonce = 3;
+  }
 
-    oneof signature_type {
-        ClientSignature signature = 2;
-    }
+  // The inner payload of the server response
+  ServerResponseInner inner = 1;
+
+  oneof signature_type { ClientSignature signature = 2; }
 }
 
 // Signature structures
 // These structures define the signatures of the requests and responses
 
 message X509Chain {
-    // The chain of certificates
-    repeated string chain = 1;
-    // The roles of the certificates, as a JWT
-    string certificate_roles = 2;
+  // The chain of certificates
+  repeated string chain = 1;
+  // The roles of the certificates, as a JWT
+  string certificate_roles = 2;
 }
 
 message FullSignature {
-    // The payload hash
-    string payload_sha256 = 1;
-    
-    // The chain of certificates
-    X509Chain certificate_chain = 2;
+  // The payload hash
+  string payload_sha256 = 1;
 
-    // The user signature, as a JWT of the payload hash
-    string user_signature = 3;
+  // The chain of certificates
+  X509Chain certificate_chain = 2;
 
-    // The server signature, as a JWT of the user signature
-    string server_signature = 4;
+  // The user signature, as a JWT of the payload hash
+  string user_signature = 3;
+
+  // The server signature, as a JWT of the user signature
+  string server_signature = 4;
 }
 
 message ClientSignature {
-    // The payload hash
-    string payload_sha256 = 1;
+  // The payload hash
+  string payload_sha256 = 1;
 
-    // The client certificate
-    string client_certificate = 2;
+  // The client certificate
+  string client_certificate = 2;
 
-    // A signature of the hash of the client certificate
-    FullSignature client_certificate_signature = 3;
+  // A signature of the hash of the client certificate
+  FullSignature client_certificate_signature = 3;
 
-    // The payload signature, as a JWT of the payload hash
-    string payload_signature = 4;
+  // The payload signature, as a JWT of the payload hash
+  string payload_signature = 4;
 }
 
 message ServerSignature {
-    // The payload hash
-    string payload_sha256 = 1;
+  // The payload hash
+  string payload_sha256 = 1;
 
-    // The chain of certificates
-    X509Chain certificate_chain = 2;
+  // The chain of certificates
+  X509Chain certificate_chain = 2;
 
-    // The server signature, as a JWT of the payload hash
-    string server_signature = 3;
+  // The server signature, as a JWT of the payload hash
+  string server_signature = 3;
 }
 
 message UserSignature {
-    // The payload hash
-    string payload_sha256 = 1;
+  // The payload hash
+  string payload_sha256 = 1;
 
-    // The chain of certificates
-    X509Chain certificate_chain = 2;
+  // The chain of certificates
+  X509Chain certificate_chain = 2;
 
-    // The user signature, as a JWT of the payload hash
-    string user_signature = 3;
+  // The user signature, as a JWT of the payload hash
+  string user_signature = 3;
 }

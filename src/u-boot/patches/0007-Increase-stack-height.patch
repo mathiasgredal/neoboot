@@ -1,7 +1,7 @@
 From 0887e563e94bd66d897392de3e7152ce24bb1e4a Mon Sep 17 00:00:00 2001
 From: Mathias Gredal <mathiasgredal@icloud.com>
 Date: Mon, 30 Dec 2024 03:11:31 +0100
-Subject: [PATCH 07/12] Increase stack height
+Subject: [PATCH 07/13] Increase stack height
 
 ---
  include/wasm3/m3_config.h | 2 +-

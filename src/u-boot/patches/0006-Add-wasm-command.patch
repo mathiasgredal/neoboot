@@ -1,7 +1,7 @@
 From 21c87f8afe7f0d712225f2525ede7fed860b234e Mon Sep 17 00:00:00 2001
 From: Mathias Gredal <mathiasgredal@icloud.com>
 Date: Mon, 30 Dec 2024 03:09:50 +0100
-Subject: [PATCH 06/12] Add wasm command
+Subject: [PATCH 06/13] Add wasm command
 
 ---
  cmd/Makefile |  1 +

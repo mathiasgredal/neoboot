@@ -1,15 +1,15 @@
 use super::{CommandDispatcher, CommandHandler};
 use crate::commands::CommandRole;
+use bytes::Bytes;
+use futures::Stream;
 use proto_rs::schema::{
     client_request::client_request_inner,
     client_response::client_response_inner::{self},
     HelpClientRequest, HelpClientResponse,
 };
-use std::{collections::HashMap, error::Error};
+use std::{collections::HashMap, error::Error, future::Future, pin::Pin};
 
-pub struct HelpCommandHandler {
-    pub dispatcher: CommandDispatcher,
-}
+pub struct HelpCommandHandler {}
 
 impl CommandHandler for HelpCommandHandler {
     fn cmd_pattern(&self) -> &'static str {
@@ -33,11 +33,16 @@ impl CommandHandler for HelpCommandHandler {
         ))
     }
 
-    fn handle(&self, _: &client_request_inner::Payload) -> client_response_inner::Payload {
-        let commands = self.dispatcher.handlers.borrow();
+    fn handle<'a>(
+        &self,
+        dispatcher: &CommandDispatcher,
+        _: &client_request_inner::Payload,
+        _: Option<Pin<Box<dyn Stream<Item = Result<Bytes, hyper::Error>> + Send + 'a>>>,
+    ) -> Pin<Box<dyn Future<Output = client_response_inner::Payload> + Send + 'a>> {
+        let commands = dispatcher.handlers.iter();
         let mut output: Vec<String> = Vec::new();
         output.push("Available commands:".to_string());
-        for (_, handler) in commands.iter() {
+        for (_, handler) in commands {
             if !handler.cmd_roles().contains(&CommandRole::Console) {
                 continue;
             }
@@ -50,7 +55,9 @@ impl CommandHandler for HelpCommandHandler {
         }
         let message = output.join("\n");
 
-        return client_response_inner::Payload::HelpResponse(HelpClientResponse { message });
+        Box::pin(async move {
+            client_response_inner::Payload::HelpResponse(HelpClientResponse { message })
+        })
     }
 
     fn response_as_string(&self, response: &client_response_inner::Payload) -> String {
@@ -61,4 +68,6 @@ impl CommandHandler for HelpCommandHandler {
             _ => "".to_string(),
         }
     }
+
+    fn on_shutdown(&self) {}
 }

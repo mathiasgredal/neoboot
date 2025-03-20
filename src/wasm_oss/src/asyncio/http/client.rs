@@ -22,14 +22,14 @@ use rustls_pki_types::DnsName;
 use std::collections::HashMap;
 use url::Url;
 
-pub struct Client {
-    executor: Executor,
+pub struct Client<'a> {
+    executor: Executor<'a>,
     base_url: String,
     default_headers: HashMap<String, String>,
 }
 
-impl Client {
-    pub fn new(executor: Executor) -> Self {
+impl<'a> Client<'a> {
+    pub fn new(executor: Executor<'a>) -> Self {
         Self {
             executor,
             base_url: String::new(),

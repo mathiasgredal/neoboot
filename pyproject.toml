@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neoboot"
+authors = [
+    { name = "Mathias Gredal", email = "mathiasgredal@icloud.com" }
+]
+version = "0.0.1"
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+    "protobuf",
+    "requests",
+]
+
+[project.optional-dependencies]
+dev = [
+    'mypy',
+    'ruff',
+    'grpcio-tools',
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = 'py311'
+
+[tool.ruff.lint]
+select = [
+    'F',      # Pyflakes
+    'E',      # pycodestyle (Error)
+    'I',      # isort
+    'D',      # pydocstyle
+    'UP',     # pyupgrade
+    'YTT',    # flake8-2020
+    'B',      # flake8-bugbear
+    'T10',    # flake8-debugger
+    'T20',    # flake8-print
+    'C4',     # flake8-comprehensions
+    'PYI006', # flake8-pyi
+    'PYI062', # flake8-pyi
+    'PYI063', # flake8-pyi
+    'PYI066', # flake8-pyi
+]
+ignore = [
+    'D105', # pycodestyle: undocumented-magic-method
+    'D107', # pycodestyle: undocumented-public-init
+    'D205', # pycodestyle: missing-blank-line-after-summary
+    'D415', # pycodestyle: ends-in-punctuation
+    'B011', # flake8-bugbear: assert-false
+    'B028', # flake8-bugbear: no-explicit-stacklevel
+    'B904', # flake8-bugbear: raise-without-from-inside-except
+]
+flake8-quotes = {inline-quotes = 'single', multiline-quotes = 'double'}
+isort = { known-first-party = ['proxyclient', 'proto_py'] }
+mccabe = { max-complexity = 14 }
+pydocstyle = { convention = 'google' }
+
+[tool.ruff.format]
+quote-style = 'single'
+
+[tool.mypy]
+strict = 'True'

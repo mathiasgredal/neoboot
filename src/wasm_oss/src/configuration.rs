@@ -1,7 +1,6 @@
 /// Configuration of the boot process.
 /// - Endpoint
-/// - Server PEM
-/// - Admin PEM
+/// - Root PEM
 /// - Network Configuration
 ///     - DHCP
 ///     - Static IP + Netmask

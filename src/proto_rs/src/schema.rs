@@ -26,6 +26,33 @@ pub struct NonceClientResponse {
     #[prost(string, tag = "1")]
     pub nonce: ::prost::alloc::string::String,
 }
+/// Quit command (cmdPattern: "quit")
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct QuitClientRequest {}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct QuitClientResponse {}
+/// Status command (cmdPattern: "status")
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct StatusClientRequest {}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct StatusClientResponse {}
+/// Chain command (cmdPattern: "chain")
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ChainClientRequest {
+    #[prost(int32, tag = "1")]
+    pub payload_size: i32,
+    /// TODO: Eventually we will want to add the configuration here too
+    #[prost(string, tag = "2")]
+    pub payload_sha256: ::prost::alloc::string::String,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct ChainClientResponse {}
+/// Error response
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ErrorClientResponse {
+    #[prost(string, tag = "1")]
+    pub error: ::prost::alloc::string::String,
+}
 /// Client request
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClientRequest {
@@ -40,21 +67,27 @@ pub mod client_request {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ClientRequestInner {
         /// A unique identifier for the request, used to prevent replay attacks
-        #[prost(string, tag = "4")]
+        #[prost(string, tag = "1")]
         pub nonce: ::prost::alloc::string::String,
-        #[prost(oneof = "client_request_inner::Payload", tags = "1, 2, 3")]
+        #[prost(oneof = "client_request_inner::Payload", tags = "2, 3, 4, 5, 6, 7")]
         pub payload: ::core::option::Option<client_request_inner::Payload>,
     }
     /// Nested message and enum types in `ClientRequestInner`.
     pub mod client_request_inner {
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Payload {
-            #[prost(message, tag = "1")]
-            HelpRequest(super::super::HelpClientRequest),
             #[prost(message, tag = "2")]
-            PrintRequest(super::super::PrintClientRequest),
+            HelpRequest(super::super::HelpClientRequest),
             #[prost(message, tag = "3")]
+            PrintRequest(super::super::PrintClientRequest),
+            #[prost(message, tag = "4")]
             NonceRequest(super::super::NonceClientRequest),
+            #[prost(message, tag = "5")]
+            QuitRequest(super::super::QuitClientRequest),
+            #[prost(message, tag = "6")]
+            ChainRequest(super::super::ChainClientRequest),
+            #[prost(message, tag = "7")]
+            StatusRequest(super::super::StatusClientRequest),
         }
     }
     #[derive(Clone, PartialEq, ::prost::Oneof)]
@@ -76,21 +109,29 @@ pub mod client_response {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ClientResponseInner {
         /// The same nonce as in the client request
-        #[prost(string, tag = "4")]
+        #[prost(string, tag = "1")]
         pub nonce: ::prost::alloc::string::String,
-        #[prost(oneof = "client_response_inner::Payload", tags = "1, 2, 3")]
+        #[prost(oneof = "client_response_inner::Payload", tags = "2, 3, 4, 5, 6, 7, 8")]
         pub payload: ::core::option::Option<client_response_inner::Payload>,
     }
     /// Nested message and enum types in `ClientResponseInner`.
     pub mod client_response_inner {
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Payload {
-            #[prost(message, tag = "1")]
-            HelpResponse(super::super::HelpClientResponse),
             #[prost(message, tag = "2")]
-            PrintResponse(super::super::PrintClientResponse),
+            HelpResponse(super::super::HelpClientResponse),
             #[prost(message, tag = "3")]
+            PrintResponse(super::super::PrintClientResponse),
+            #[prost(message, tag = "4")]
             NonceResponse(super::super::NonceClientResponse),
+            #[prost(message, tag = "5")]
+            QuitResponse(super::super::QuitClientResponse),
+            #[prost(message, tag = "6")]
+            ChainResponse(super::super::ChainClientResponse),
+            #[prost(message, tag = "7")]
+            StatusResponse(super::super::StatusClientResponse),
+            #[prost(message, tag = "8")]
+            ErrorResponse(super::super::ErrorClientResponse),
         }
     }
     #[derive(Clone, PartialEq, ::prost::Oneof)]

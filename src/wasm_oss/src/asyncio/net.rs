@@ -30,12 +30,16 @@ struct Socket {
     inner: Rc<RefCell<SocketInner>>,
 }
 
+unsafe impl Send for Socket {}
+unsafe impl Sync for Socket {}
+
 impl Socket {
     fn create_tcp() -> Result<Self, LwipError> {
         let socket = unsafe { ffi::env_net_socket_new_tcp() };
         if socket < 0 {
             return Err(LwipError::from_code(socket));
         }
+        info!("Creating TCP socket: {}", socket);
         Ok(Socket {
             inner: Rc::new(RefCell::new(SocketInner { socket })),
         })
@@ -150,11 +154,13 @@ impl TcpListener {
         let result =
             unsafe { ffi::env_net_socket_bind(socket.inner.borrow().socket, addr, port.into()) };
         if result != LwipError::Ok.to_code() {
+            info!("Failed to bind TCP listener: {}", result);
             return Err(LwipError::from_code(result));
         }
 
         let result = unsafe { ffi::env_net_socket_listen(socket.inner.borrow().socket, 8) };
         if result != LwipError::Ok.to_code() {
+            info!("Failed to listen on TCP listener: {}", result);
             return Err(LwipError::from_code(result));
         }
 

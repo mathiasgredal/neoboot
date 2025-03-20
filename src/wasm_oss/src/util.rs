@@ -14,7 +14,6 @@ pub fn sys_print(s: &str) {
     }
 }
 
-// Logging
 pub mod logging {
     use crate::ffi;
     use log::{Level, Log, Metadata, Record, SetLoggerError};
@@ -54,7 +53,6 @@ pub mod logging {
     }
 }
 
-// Panic
 pub mod panic {
     use crate::ffi;
 
