@@ -57,8 +57,8 @@ impl Future for TimeoutFuture {
 }
 
 // Sets up a timeout task that can be reset
-pub async fn setup_timeout_task<'b>(
-    executor: &Executor<'b>,
+pub async fn setup_timeout_task(
+    executor: &Executor<'_>,
     controller: Arc<Mutex<TimeoutController>>,
 ) {
     let duration_ms = controller.lock().unwrap().duration_ms;

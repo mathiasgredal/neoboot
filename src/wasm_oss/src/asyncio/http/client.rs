@@ -118,7 +118,7 @@ impl<'a> Client<'a> {
                     )
                     .await
                     {
-                        Ok(Ok(tls_stream)) => stream = AnyHttpStream::Https(tls_stream),
+                        Ok(Ok(tls_stream)) => stream = AnyHttpStream::Https(Box::new(tls_stream)),
                         Ok(Err(e)) => return Err(format!("TLS handshake failed: {}", e).into()),
                         Err(_) => return Err("TLS handshake timed out".into()),
                     }

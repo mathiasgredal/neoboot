@@ -12,7 +12,7 @@ where
     T: AsyncRead + AsyncWrite,
 {
     Http(T),
-    Https(TlsStream<T>),
+    Https(Box<TlsStream<T>>),
 }
 
 impl<T: AsyncRead + AsyncWrite> From<T> for AnyHttpStream<T> {
@@ -23,7 +23,7 @@ impl<T: AsyncRead + AsyncWrite> From<T> for AnyHttpStream<T> {
 
 impl<T: AsyncRead + AsyncWrite> From<TlsStream<T>> for AnyHttpStream<T> {
     fn from(inner: TlsStream<T>) -> Self {
-        Self::Https(inner)
+        Self::Https(Box::new(inner))
     }
 }
 
@@ -45,14 +45,12 @@ impl<T: AsyncRead + AsyncWrite + Unpin> rt::Read for AnyHttpStream<T> {
                 let pinned = std::pin::pin!(s);
                 pinned.poll_read(cx, &mut ibuf).map_ok(|n| {
                     buf.put_slice(&ibuf[..n]);
-                    ()
                 })
             }
             Self::Https(s) => {
                 let pinned = std::pin::pin!(s);
                 pinned.poll_read(cx, &mut ibuf).map_ok(|n| {
                     buf.put_slice(&ibuf[..n]);
-                    ()
                 })
             }
         }
@@ -108,7 +106,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> rt::Write for AnyHttpStream<T> {
 
     #[inline]
     fn is_write_vectored(&self) -> bool {
-        return false;
+        false
     }
 
     #[inline]

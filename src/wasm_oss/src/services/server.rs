@@ -45,13 +45,13 @@ impl<'a> ServerService<'a> {
         let service = service_fn(move |req: Request<Incoming>| {
             let dispatcher = dispatcher.clone();
             let executor = executor.clone();
-            return async move {
+            async move {
                 let response = Self::handle_request(dispatcher.clone(), req).await;
                 dispatcher
                     .borrow()
                     .finalize_shutdown_if_requested(&executor);
                 response
-            };
+            }
         });
 
         let mut http = Builder::new();
@@ -163,7 +163,7 @@ impl<'a> super::Service<'a> for ServerService<'a> {
 
         self.listener = Some(TcpListener::bind(addr.to_string().as_str(), DEFAULT_PORT).unwrap());
 
-        return Box::pin(async move {
+        Box::pin(async move {
             loop {
                 let accept_fut = self.listener.as_ref().unwrap().accept().boxed();
                 let exit_fut = executor.wait_for_exit().boxed();
@@ -195,6 +195,6 @@ impl<'a> super::Service<'a> for ServerService<'a> {
                     }
                 }
             }
-        });
+        })
     }
 }

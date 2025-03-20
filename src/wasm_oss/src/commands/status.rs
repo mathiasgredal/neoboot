@@ -15,7 +15,7 @@ pub struct StatusCommandHandler<'b> {
     pub executor: Executor<'b>,
 }
 
-impl<'b> CommandHandler for StatusCommandHandler<'b> {
+impl CommandHandler for StatusCommandHandler<'_> {
     fn cmd_pattern(&self) -> &'static str {
         "status"
     }

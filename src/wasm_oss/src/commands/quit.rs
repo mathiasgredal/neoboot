@@ -6,13 +6,7 @@ use proto_rs::schema::{
     client_response::client_response_inner::{self},
     QuitClientRequest, QuitClientResponse,
 };
-use std::{
-    collections::HashMap,
-    error::Error,
-    future::Future,
-    pin::Pin,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, error::Error, future::Future, pin::Pin};
 
 pub struct QuitCommandHandler {}
 

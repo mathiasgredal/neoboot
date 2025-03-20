@@ -68,6 +68,5 @@ pub fn create_tls_connector() -> TlsConnector {
     let mut config = rustls::ClientConfig::dangerous(&mut config);
     config.set_certificate_verifier(Arc::new(NoVerifyCert {}));
     let client_config: ClientConfig = config.cfg.clone();
-    let connector = TlsConnector::from(Arc::new(client_config));
-    return connector;
+    TlsConnector::from(Arc::new(client_config))
 }

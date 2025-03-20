@@ -13,6 +13,7 @@ use std::task::RawWakerVTable;
 use std::task::Waker;
 use std::task::{Context, Poll};
 
+#[cfg(feature = "executor_metrics")]
 static ACTIVE_TASKS: AtomicUsize = AtomicUsize::new(0);
 
 struct ExecutorInner<'a> {
@@ -27,24 +28,22 @@ pub struct Executor<'a> {
     inner: Rc<RefCell<ExecutorInner<'a>>>,
 }
 
-unsafe impl<'a> Sync for Executor<'a> {}
-unsafe impl<'a> Send for Executor<'a> {}
+unsafe impl Sync for Executor<'_> {}
+unsafe impl Send for Executor<'_> {}
 
 impl<'a> Executor<'a> {
     /// Initialize a new executor instance.
     pub fn new() -> Executor<'a> {
         let (sender, scheduled) = mpsc::channel();
 
-        let executor = Executor {
+        Executor {
             inner: Rc::new(RefCell::new(ExecutorInner {
                 scheduled,
                 sender,
                 exit_flag: false,
                 exit_waker: None,
             })),
-        };
-
-        executor
+        }
     }
 
     /// Spawn a future onto the executor instance.
@@ -85,28 +84,30 @@ impl<'a> Executor<'a> {
 
     /// Get the number of active tasks.
     pub fn active_tasks(&self) -> usize {
-        ACTIVE_TASKS.load(std::sync::atomic::Ordering::Relaxed)
+        #[cfg(feature = "executor_metrics")]
+        return ACTIVE_TASKS.load(std::sync::atomic::Ordering::Relaxed);
+        0
     }
 
     /// An async function that waits for the executor to exit.
-    pub async fn wait_for_exit(&self) -> Result<(), ()> {
+    pub async fn wait_for_exit(&self) {
         struct WaitForExit<'a> {
             executor: Executor<'a>,
         }
 
-        impl<'a> Future for WaitForExit<'a> {
-            type Output = Result<(), ()>;
+        impl Future for WaitForExit<'_> {
+            type Output = ();
 
             fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 let executor = self.executor.clone();
                 let mut inner = executor.inner.borrow_mut();
 
                 if inner.exit_flag {
-                    return Poll::Ready(Ok(()));
+                    return Poll::Ready(());
                 }
 
                 inner.exit_waker = Some(cx.waker().clone());
-                return Poll::Pending;
+                Poll::Pending
             }
         }
 
@@ -114,8 +115,6 @@ impl<'a> Executor<'a> {
             executor: self.clone(),
         }
         .await;
-
-        Ok(())
     }
 }
 
@@ -130,10 +129,10 @@ struct Task<'a> {
 }
 
 // SAFETY: Since our executor is single-threaded, we can safely implement Sync and Send for Task.
-unsafe impl<'a> Sync for Task<'a> {}
-unsafe impl<'a> Send for Task<'a> {}
+unsafe impl Sync for Task<'_> {}
+unsafe impl Send for Task<'_> {}
 
-impl<'a> ArcWake for Task<'a> {
+impl ArcWake for Task<'_> {
     fn wake_by_ref(arc_self: &Arc<Self>) {
         arc_self.schedule();
     }
@@ -147,7 +146,7 @@ impl<'a> TaskFuture<'a> {
         }
     }
 
-    fn poll<'b>(&mut self, cx: &mut Context<'b>) {
+    fn poll(&mut self, cx: &mut Context<'_>) {
         // Spurious wake-ups are allowed, even after a future has
         // returned `Ready`. However, polling a future which has
         // already returned `Ready` is *not* allowed. For this
@@ -206,11 +205,13 @@ pub fn waker<'a, W: ArcWake + 'a>(wake: Arc<W>) -> Waker {
 
 impl<'a> Task<'a> {
     fn schedule(self: &Arc<Self>) {
+        #[cfg(feature = "executor_metrics")]
         let _ = ACTIVE_TASKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let _ = self.executor.send(self.clone());
     }
 
-    fn poll<'b>(self: Arc<Self>) {
+    fn poll(self: Arc<Self>) {
+        #[cfg(feature = "executor_metrics")]
         if ACTIVE_TASKS.load(std::sync::atomic::Ordering::Relaxed) > 1 {
             let _ = ACTIVE_TASKS.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         }

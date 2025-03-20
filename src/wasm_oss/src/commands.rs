@@ -57,9 +57,6 @@ pub struct CommandDispatcher<'a> {
     shutdown_flag: Arc<Mutex<bool>>,
 }
 
-unsafe impl<'a> Send for CommandDispatcher<'a> {}
-unsafe impl<'a> Sync for CommandDispatcher<'a> {}
-
 impl<'a> CommandDispatcher<'a> {
     pub fn new() -> Self {
         Self {
@@ -173,7 +170,7 @@ impl<'a> CommandDispatcher<'a> {
     /// In normal operation (no shutdown requested), this method does nothing.
     pub fn finalize_shutdown_if_requested<'b: 'a>(&self, executor: &Executor<'b>) {
         // Only proceed if a shutdown has been requested
-        if *self.shutdown_flag.lock().unwrap() == false {
+        if !(*self.shutdown_flag.lock().unwrap()) {
             return;
         }
 

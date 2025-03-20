@@ -14,10 +14,7 @@ pub struct ConsoleService<'a> {
     input_buffer: String,
 }
 
-unsafe impl<'a> Send for ConsoleService<'a> {}
-unsafe impl<'a> Sync for ConsoleService<'a> {}
-
-impl<'a> ConsoleService<'a> {
+impl ConsoleService<'_> {
     async fn process_input(&self, input: &str) {
         if input.trim().is_empty() {
             return;
@@ -38,7 +35,7 @@ impl<'a> super::Service<'a> for ConsoleService<'a> {
     }
 
     fn run(mut self: Box<Self>, executor: Executor<'a>) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
-        return Box::pin(async move {
+        Box::pin(async move {
             sys_print("\nConsole ready. Type 'help' for available commands.\n> ");
             loop {
                 let key =
@@ -80,7 +77,7 @@ impl<'a> super::Service<'a> for ConsoleService<'a> {
                     _ => {}
                 }
             }
-        });
+        })
     }
 }
 

@@ -47,7 +47,7 @@ impl<'a> Response<'a> {
         match metadata {
             Ok(ResponseData::Metadata(metadata)) => Ok(Self {
                 metadata,
-                body_stream: body_stream,
+                body_stream,
             }),
             Ok(ResponseData::Stream(_)) => Err(Box::new(LwipError::InvalidValue)),
             Err(e) => {
@@ -75,7 +75,7 @@ impl<'a> Response<'a> {
     pub async fn stream(
         self,
     ) -> impl Stream<Item = Result<Bytes, Box<dyn std::error::Error>>> + use<'a> {
-        return self.body_stream.map(|chunk| match chunk {
+        self.body_stream.map(|chunk| match chunk {
             Ok(ResponseData::Stream(chunk)) => Ok(chunk.data),
             Ok(ResponseData::Metadata(_)) => {
                 let err: Box<dyn std::error::Error> = Box::new(std::io::Error::new(
@@ -88,7 +88,7 @@ impl<'a> Response<'a> {
                 let err: Box<dyn std::error::Error> = e;
                 Err(err)
             }
-        });
+        })
     }
 
     pub async fn bytes(&mut self) -> Result<Bytes, Box<dyn std::error::Error>> {

@@ -66,7 +66,7 @@ impl AsyncRead for Socket {
         let read_bytes = unsafe {
             ffi::env_net_socket_read(
                 self.inner.borrow().socket,
-                buf.as_mut_ptr() as *mut u8,
+                buf.as_mut_ptr(),
                 buf.remaining_mut() as u32,
             )
         };
@@ -98,18 +98,14 @@ impl AsyncWrite for Socket {
     ) -> std::task::Poll<std::io::Result<usize>> {
         unsafe { ffi::env_net_rx() };
         let write_bytes = unsafe {
-            ffi::env_net_socket_write(
-                self.inner.borrow().socket,
-                buf.as_ptr() as *const u8,
-                buf.len() as u32,
-            )
+            ffi::env_net_socket_write(self.inner.borrow().socket, buf.as_ptr(), buf.len() as u32)
         };
 
         if write_bytes < 0 {
             return Poll::Ready(Err(LwipError::from_code(write_bytes).into()));
         }
 
-        return Poll::Ready(Ok(buf.len() as usize));
+        Poll::Ready(Ok(buf.len()))
     }
 
     fn poll_flush(
@@ -128,7 +124,7 @@ impl AsyncWrite for Socket {
             return Poll::Ready(Ok(()));
         }
 
-        return Poll::Ready(Err(LwipError::from_code(err).into()));
+        Poll::Ready(Err(LwipError::from_code(err).into()))
     }
 
     fn poll_close(
@@ -189,11 +185,11 @@ impl TcpListener {
                     return Poll::Ready(Err(LwipError::from_code(result)));
                 }
 
-                return Poll::Ready(Ok(TcpStream {
+                Poll::Ready(Ok(TcpStream {
                     socket: Socket {
                         inner: Rc::new(RefCell::new(SocketInner { socket: result })),
                     },
-                }));
+                }))
             }
         }
 
@@ -244,7 +240,7 @@ impl TcpStream {
                 }
 
                 log::error!("Failed to connect to socket poll: {}", err);
-                return Poll::Ready(Err(LwipError::from_code(err)));
+                Poll::Ready(Err(LwipError::from_code(err)))
             }
         }
 

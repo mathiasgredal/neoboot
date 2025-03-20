@@ -115,9 +115,9 @@ impl fmt::Display for LwipError {
 
 impl Error for LwipError {}
 
-impl Into<std::io::Error> for LwipError {
-    fn into(self) -> std::io::Error {
-        match self {
+impl From<LwipError> for std::io::Error {
+    fn from(val: LwipError) -> Self {
+        match val {
             LwipError::Ok => std::io::Error::new(std::io::ErrorKind::Other, "lwIP Ok"),
             LwipError::OutOfMemory => {
                 std::io::Error::new(std::io::ErrorKind::OutOfMemory, "lwIP Out of memory")

@@ -13,6 +13,7 @@
 		"search.useParentIgnoreFiles": false,
 		"search.useIgnoreFiles": false,
 		"rust-analyzer.cargo.targetDir": "${workspaceFolder}/build/cargo",
+		"rust-analyzer.check.command": "clippy",
 		"editor.formatOnSave": true,
 		"files.exclude": {
 			"**/*.egg-info": true,
