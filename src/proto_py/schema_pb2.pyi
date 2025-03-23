@@ -1,4 +1,5 @@
 from google.protobuf.internal import containers as _containers
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
 from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
@@ -65,6 +66,24 @@ class ChainClientResponse(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
+class BootClientRequest(_message.Message):
+    __slots__ = ("boot_type", "payload_size", "payload_sha256")
+    class BootType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+        __slots__ = ()
+        BOOT_TYPE_LINUX: _ClassVar[BootClientRequest.BootType]
+    BOOT_TYPE_LINUX: BootClientRequest.BootType
+    BOOT_TYPE_FIELD_NUMBER: _ClassVar[int]
+    PAYLOAD_SIZE_FIELD_NUMBER: _ClassVar[int]
+    PAYLOAD_SHA256_FIELD_NUMBER: _ClassVar[int]
+    boot_type: BootClientRequest.BootType
+    payload_size: int
+    payload_sha256: str
+    def __init__(self, boot_type: _Optional[_Union[BootClientRequest.BootType, str]] = ..., payload_size: _Optional[int] = ..., payload_sha256: _Optional[str] = ...) -> None: ...
+
+class BootClientResponse(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
 class ErrorClientResponse(_message.Message):
     __slots__ = ("error",)
     ERROR_FIELD_NUMBER: _ClassVar[int]
@@ -74,7 +93,7 @@ class ErrorClientResponse(_message.Message):
 class ClientRequest(_message.Message):
     __slots__ = ("inner", "signature")
     class ClientRequestInner(_message.Message):
-        __slots__ = ("nonce", "help_request", "print_request", "nonce_request", "quit_request", "chain_request", "status_request")
+        __slots__ = ("nonce", "help_request", "print_request", "nonce_request", "quit_request", "chain_request", "status_request", "boot_request")
         NONCE_FIELD_NUMBER: _ClassVar[int]
         HELP_REQUEST_FIELD_NUMBER: _ClassVar[int]
         PRINT_REQUEST_FIELD_NUMBER: _ClassVar[int]
@@ -82,6 +101,7 @@ class ClientRequest(_message.Message):
         QUIT_REQUEST_FIELD_NUMBER: _ClassVar[int]
         CHAIN_REQUEST_FIELD_NUMBER: _ClassVar[int]
         STATUS_REQUEST_FIELD_NUMBER: _ClassVar[int]
+        BOOT_REQUEST_FIELD_NUMBER: _ClassVar[int]
         nonce: str
         help_request: HelpClientRequest
         print_request: PrintClientRequest
@@ -89,7 +109,8 @@ class ClientRequest(_message.Message):
         quit_request: QuitClientRequest
         chain_request: ChainClientRequest
         status_request: StatusClientRequest
-        def __init__(self, nonce: _Optional[str] = ..., help_request: _Optional[_Union[HelpClientRequest, _Mapping]] = ..., print_request: _Optional[_Union[PrintClientRequest, _Mapping]] = ..., nonce_request: _Optional[_Union[NonceClientRequest, _Mapping]] = ..., quit_request: _Optional[_Union[QuitClientRequest, _Mapping]] = ..., chain_request: _Optional[_Union[ChainClientRequest, _Mapping]] = ..., status_request: _Optional[_Union[StatusClientRequest, _Mapping]] = ...) -> None: ...
+        boot_request: BootClientRequest
+        def __init__(self, nonce: _Optional[str] = ..., help_request: _Optional[_Union[HelpClientRequest, _Mapping]] = ..., print_request: _Optional[_Union[PrintClientRequest, _Mapping]] = ..., nonce_request: _Optional[_Union[NonceClientRequest, _Mapping]] = ..., quit_request: _Optional[_Union[QuitClientRequest, _Mapping]] = ..., chain_request: _Optional[_Union[ChainClientRequest, _Mapping]] = ..., status_request: _Optional[_Union[StatusClientRequest, _Mapping]] = ..., boot_request: _Optional[_Union[BootClientRequest, _Mapping]] = ...) -> None: ...
     INNER_FIELD_NUMBER: _ClassVar[int]
     SIGNATURE_FIELD_NUMBER: _ClassVar[int]
     inner: ClientRequest.ClientRequestInner
@@ -99,24 +120,26 @@ class ClientRequest(_message.Message):
 class ClientResponse(_message.Message):
     __slots__ = ("inner", "signature")
     class ClientResponseInner(_message.Message):
-        __slots__ = ("nonce", "help_response", "print_response", "nonce_response", "quit_response", "chain_response", "status_response", "error_response")
+        __slots__ = ("nonce", "error_response", "help_response", "print_response", "nonce_response", "quit_response", "chain_response", "status_response", "boot_response")
         NONCE_FIELD_NUMBER: _ClassVar[int]
+        ERROR_RESPONSE_FIELD_NUMBER: _ClassVar[int]
         HELP_RESPONSE_FIELD_NUMBER: _ClassVar[int]
         PRINT_RESPONSE_FIELD_NUMBER: _ClassVar[int]
         NONCE_RESPONSE_FIELD_NUMBER: _ClassVar[int]
         QUIT_RESPONSE_FIELD_NUMBER: _ClassVar[int]
         CHAIN_RESPONSE_FIELD_NUMBER: _ClassVar[int]
         STATUS_RESPONSE_FIELD_NUMBER: _ClassVar[int]
-        ERROR_RESPONSE_FIELD_NUMBER: _ClassVar[int]
+        BOOT_RESPONSE_FIELD_NUMBER: _ClassVar[int]
         nonce: str
+        error_response: ErrorClientResponse
         help_response: HelpClientResponse
         print_response: PrintClientResponse
         nonce_response: NonceClientResponse
         quit_response: QuitClientResponse
         chain_response: ChainClientResponse
         status_response: StatusClientResponse
-        error_response: ErrorClientResponse
-        def __init__(self, nonce: _Optional[str] = ..., help_response: _Optional[_Union[HelpClientResponse, _Mapping]] = ..., print_response: _Optional[_Union[PrintClientResponse, _Mapping]] = ..., nonce_response: _Optional[_Union[NonceClientResponse, _Mapping]] = ..., quit_response: _Optional[_Union[QuitClientResponse, _Mapping]] = ..., chain_response: _Optional[_Union[ChainClientResponse, _Mapping]] = ..., status_response: _Optional[_Union[StatusClientResponse, _Mapping]] = ..., error_response: _Optional[_Union[ErrorClientResponse, _Mapping]] = ...) -> None: ...
+        boot_response: BootClientResponse
+        def __init__(self, nonce: _Optional[str] = ..., error_response: _Optional[_Union[ErrorClientResponse, _Mapping]] = ..., help_response: _Optional[_Union[HelpClientResponse, _Mapping]] = ..., print_response: _Optional[_Union[PrintClientResponse, _Mapping]] = ..., nonce_response: _Optional[_Union[NonceClientResponse, _Mapping]] = ..., quit_response: _Optional[_Union[QuitClientResponse, _Mapping]] = ..., chain_response: _Optional[_Union[ChainClientResponse, _Mapping]] = ..., status_response: _Optional[_Union[StatusClientResponse, _Mapping]] = ..., boot_response: _Optional[_Union[BootClientResponse, _Mapping]] = ...) -> None: ...
     INNER_FIELD_NUMBER: _ClassVar[int]
     SIGNATURE_FIELD_NUMBER: _ClassVar[int]
     inner: ClientResponse.ClientResponseInner

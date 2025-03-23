@@ -1,4 +1,4 @@
-use super::{CommandDispatcher, CommandHandler, CommandRole};
+use super::{CommandDispatcher, CommandHandler, CommandRole, HandleStream};
 use crate::ffi;
 use bytes::Bytes;
 use futures::Stream;
@@ -38,7 +38,7 @@ impl CommandHandler for ChainCommandHandler {
         &self,
         dispatcher: &CommandDispatcher,
         request: &client_request_inner::Payload,
-        stream: Option<Pin<Box<dyn Stream<Item = Result<Bytes, hyper::Error>> + Send + 'a>>>,
+        stream: Option<HandleStream<'a>>,
     ) -> Pin<Box<dyn Future<Output = client_response_inner::Payload> + Send + 'a>> {
         let message = match request {
             client_request_inner::Payload::ChainRequest(chain_request) => {

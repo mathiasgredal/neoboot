@@ -7,6 +7,10 @@ unsafe extern "C" {
     pub fn env_free(ptr: u64) -> i32; // Free memory
     pub fn env_memcpy(src: *const u8, dest: u64, len: u32) -> i32; // Copy memory
     pub fn env_set_wasm_chainload(src: u64, len: u32); // Set WASM chainload source
+    pub fn env_execute_cmd(cmd: *const u8, len: u32) -> i32; // Execute command
+
+    // Environment
+    pub fn env_get_env(key: *const u8, key_len: u32, value: *const u8, value_len: u32) -> i32;
 
     // Network
     pub fn env_net_setup() -> i32;

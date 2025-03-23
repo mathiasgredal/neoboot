@@ -1,6 +1,6 @@
 use crate::errors::lwip_error::LwipError;
 use crate::ffi;
-use crate::util::ip_addr_to_u32;
+use crate::utils::ip_addr_to_u32;
 use bytes::BufMut;
 use futures::{AsyncRead, AsyncWrite};
 use log::{error, info};

@@ -47,6 +47,54 @@ pub struct ChainClientRequest {
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct ChainClientResponse {}
+/// Boot command
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BootClientRequest {
+    #[prost(enumeration = "boot_client_request::BootType", tag = "1")]
+    pub boot_type: i32,
+    #[prost(int32, tag = "2")]
+    pub payload_size: i32,
+    #[prost(string, tag = "3")]
+    pub payload_sha256: ::prost::alloc::string::String,
+}
+/// Nested message and enum types in `BootClientRequest`.
+pub mod boot_client_request {
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum BootType {
+        Linux = 0,
+    }
+    impl BootType {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Self::Linux => "BOOT_TYPE_LINUX",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "BOOT_TYPE_LINUX" => Some(Self::Linux),
+                _ => None,
+            }
+        }
+    }
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct BootClientResponse {}
 /// Error response
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ErrorClientResponse {
@@ -69,7 +117,7 @@ pub mod client_request {
         /// A unique identifier for the request, used to prevent replay attacks
         #[prost(string, tag = "1")]
         pub nonce: ::prost::alloc::string::String,
-        #[prost(oneof = "client_request_inner::Payload", tags = "2, 3, 4, 5, 6, 7")]
+        #[prost(oneof = "client_request_inner::Payload", tags = "2, 3, 4, 5, 6, 7, 8")]
         pub payload: ::core::option::Option<client_request_inner::Payload>,
     }
     /// Nested message and enum types in `ClientRequestInner`.
@@ -88,6 +136,8 @@ pub mod client_request {
             ChainRequest(super::super::ChainClientRequest),
             #[prost(message, tag = "7")]
             StatusRequest(super::super::StatusClientRequest),
+            #[prost(message, tag = "8")]
+            BootRequest(super::super::BootClientRequest),
         }
     }
     #[derive(Clone, PartialEq, ::prost::Oneof)]
@@ -111,27 +161,36 @@ pub mod client_response {
         /// The same nonce as in the client request
         #[prost(string, tag = "1")]
         pub nonce: ::prost::alloc::string::String,
-        #[prost(oneof = "client_response_inner::Payload", tags = "2, 3, 4, 5, 6, 7, 8")]
+        /// Todo: Make a result type instead, which contains the result of the
+        /// command or an error
+        #[prost(
+            oneof = "client_response_inner::Payload",
+            tags = "2, 3, 4, 5, 6, 7, 8, 9"
+        )]
         pub payload: ::core::option::Option<client_response_inner::Payload>,
     }
     /// Nested message and enum types in `ClientResponseInner`.
     pub mod client_response_inner {
+        /// Todo: Make a result type instead, which contains the result of the
+        /// command or an error
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Payload {
             #[prost(message, tag = "2")]
-            HelpResponse(super::super::HelpClientResponse),
-            #[prost(message, tag = "3")]
-            PrintResponse(super::super::PrintClientResponse),
-            #[prost(message, tag = "4")]
-            NonceResponse(super::super::NonceClientResponse),
-            #[prost(message, tag = "5")]
-            QuitResponse(super::super::QuitClientResponse),
-            #[prost(message, tag = "6")]
-            ChainResponse(super::super::ChainClientResponse),
-            #[prost(message, tag = "7")]
-            StatusResponse(super::super::StatusClientResponse),
-            #[prost(message, tag = "8")]
             ErrorResponse(super::super::ErrorClientResponse),
+            #[prost(message, tag = "3")]
+            HelpResponse(super::super::HelpClientResponse),
+            #[prost(message, tag = "4")]
+            PrintResponse(super::super::PrintClientResponse),
+            #[prost(message, tag = "5")]
+            NonceResponse(super::super::NonceClientResponse),
+            #[prost(message, tag = "6")]
+            QuitResponse(super::super::QuitClientResponse),
+            #[prost(message, tag = "7")]
+            ChainResponse(super::super::ChainClientResponse),
+            #[prost(message, tag = "8")]
+            StatusResponse(super::super::StatusClientResponse),
+            #[prost(message, tag = "9")]
+            BootResponse(super::super::BootClientResponse),
         }
     }
     #[derive(Clone, PartialEq, ::prost::Oneof)]

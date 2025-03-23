@@ -14,3 +14,4 @@
 ///     - Initiate contact with uart clients
 ///     - Boot from Network
 ///     - Boot from Hard Drive
+/// - Boot Targets

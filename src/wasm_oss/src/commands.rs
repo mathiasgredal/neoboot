@@ -7,8 +7,8 @@ use proto_rs::schema::{
         ClientRequestInner,
     },
     client_response::{client_response_inner, ClientResponseInner},
-    ChainClientRequest, ClientRequest, ClientResponse, HelpClientRequest, NonceClientRequest,
-    PrintClientRequest, QuitClientRequest, StatusClientRequest,
+    BootClientRequest, ChainClientRequest, ClientRequest, ClientResponse, HelpClientRequest,
+    NonceClientRequest, PrintClientRequest, QuitClientRequest, StatusClientRequest,
 };
 use std::{
     any::TypeId,
@@ -19,14 +19,15 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-mod chain;
-mod help;
-mod nonce;
-mod print;
-mod quit;
-mod status;
+pub mod boot;
+pub mod chain;
+pub mod help;
+pub mod nonce;
+pub mod print;
+pub mod quit;
+pub mod status;
 
-type HandleStream<'a> = Pin<Box<dyn Stream<Item = Result<Bytes, hyper::Error>> + Send + 'a>>;
+pub type HandleStream<'a> = Pin<Box<dyn Stream<Item = Result<Bytes, hyper::Error>> + Send + 'a>>;
 
 #[derive(PartialEq)]
 enum CommandRole {
@@ -67,17 +68,7 @@ impl<'a> CommandDispatcher<'a> {
         }
     }
 
-    pub fn default() -> Self {
-        let mut dispatcher = Self::new();
-        dispatcher.register_handler::<NonceClientRequest>(nonce::NonceCommandHandler {});
-        dispatcher.register_handler::<HelpClientRequest>(help::HelpCommandHandler {});
-        dispatcher.register_handler::<PrintClientRequest>(print::PrintCommandHandler {});
-        dispatcher.register_handler::<QuitClientRequest>(quit::QuitCommandHandler {});
-        dispatcher.register_handler::<ChainClientRequest>(chain::ChainCommandHandler {});
-        dispatcher
-    }
-
-    fn register_handler<T: 'static>(&mut self, handler: impl CommandHandler + 'a) {
+    pub fn register_handler<T: 'static>(&mut self, handler: impl CommandHandler + 'a) {
         self.handlers.insert(TypeId::of::<T>(), Box::new(handler));
     }
 
@@ -146,6 +137,7 @@ impl<'a> CommandDispatcher<'a> {
             client_request_inner::Payload::QuitRequest(_) => TypeId::of::<QuitClientRequest>(),
             client_request_inner::Payload::ChainRequest(_) => TypeId::of::<ChainClientRequest>(),
             client_request_inner::Payload::StatusRequest(_) => TypeId::of::<StatusClientRequest>(),
+            client_request_inner::Payload::BootRequest(_) => TypeId::of::<BootClientRequest>(),
         };
 
         let response_payload = match self.handlers.get(&type_id) {

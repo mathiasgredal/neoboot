@@ -1,4 +1,4 @@
-use crate::{errors::lwip_error::LwipError, ffi, util::ip_addr_to_u32};
+use crate::{errors::lwip_error::LwipError, ffi, utils::ip_addr_to_u32};
 use futures::lock::Mutex;
 use log::info;
 use once_cell::sync::Lazy;

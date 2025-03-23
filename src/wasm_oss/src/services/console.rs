@@ -1,6 +1,6 @@
 use crate::commands::CommandDispatcher;
 use crate::executor::Executor;
-use crate::util::sys_print;
+use crate::utils::sys_print;
 use crate::{asyncio::get_keypress, errors::lwip_error::LwipError};
 use futures::{
     future::{select, Either},
@@ -14,7 +14,14 @@ pub struct ConsoleService<'a> {
     input_buffer: String,
 }
 
-impl ConsoleService<'_> {
+impl<'a> ConsoleService<'a> {
+    pub fn new(dispatcher: Rc<RefCell<CommandDispatcher<'a>>>) -> Self {
+        Self {
+            dispatcher,
+            input_buffer: String::new(),
+        }
+    }
+
     async fn process_input(&self, input: &str) {
         if input.trim().is_empty() {
             return;
@@ -78,14 +85,5 @@ impl<'a> super::Service<'a> for ConsoleService<'a> {
                 }
             }
         })
-    }
-}
-
-impl<'a> ConsoleService<'a> {
-    pub fn new(dispatcher: Rc<RefCell<CommandDispatcher<'a>>>) -> Self {
-        Self {
-            dispatcher,
-            input_buffer: String::new(),
-        }
     }
 }

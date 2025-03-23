@@ -43,6 +43,18 @@ message ChainClientRequest {
 
 message ChainClientResponse {}
 
+// Boot command
+message BootClientRequest {
+  enum BootType {
+    BOOT_TYPE_LINUX = 0;
+  }
+  BootType boot_type = 1;
+  int32 payload_size = 2;
+  string payload_sha256 = 3;
+}
+
+message BootClientResponse {}
+
 // Error response
 message ErrorClientResponse { string error = 1; }
 
@@ -59,6 +71,7 @@ message ClientRequest {
       QuitClientRequest quit_request = 5;
       ChainClientRequest chain_request = 6;
       StatusClientRequest status_request = 7;
+      BootClientRequest boot_request = 8;
     }
   }
 
@@ -73,14 +86,17 @@ message ClientResponse {
     // The same nonce as in the client request
     string nonce = 1;
 
+    // Todo: Make a result type instead, which contains the result of the
+    // command or an error
     oneof payload {
-      HelpClientResponse help_response = 2;
-      PrintClientResponse print_response = 3;
-      NonceClientResponse nonce_response = 4;
-      QuitClientResponse quit_response = 5;
-      ChainClientResponse chain_response = 6;
-      StatusClientResponse status_response = 7;
-      ErrorClientResponse error_response = 8;
+      ErrorClientResponse error_response = 2;
+      HelpClientResponse help_response = 3;
+      PrintClientResponse print_response = 4;
+      NonceClientResponse nonce_response = 5;
+      QuitClientResponse quit_response = 6;
+      ChainClientResponse chain_response = 7;
+      StatusClientResponse status_response = 8;
+      BootClientResponse boot_response = 9;
     }
   }
 

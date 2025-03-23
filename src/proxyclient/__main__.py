@@ -4,34 +4,47 @@ import base64
 import hashlib
 from pathlib import Path
 
+import msgpack
 import requests
 
 import proto_py.schema_pb2 as schema_pb2
 
-long_body = Path('dist/wasm_oss/main.wasm').read_bytes()
+output: bytes = msgpack.packb(
+    {
+        'kernel_addr_r': Path('dist/linux/aarch64/Image').read_bytes(),
+        'ramdisk_addr_r': Path('dist/initramfs/aarch64/initramfs.cpio.gz').read_bytes(),
+    }
+)
 
 req = schema_pb2.ClientRequest(
     inner=schema_pb2.ClientRequest.ClientRequestInner(
-        chain_request=schema_pb2.ChainClientRequest(
-            payload_size=len(long_body),
-            payload_sha256=hashlib.sha256(long_body).hexdigest(),
+        boot_request=schema_pb2.BootClientRequest(
+            boot_type=schema_pb2.BootClientRequest.BootType.BOOT_TYPE_LINUX,
+            payload_size=len(output),
+            payload_sha256=hashlib.sha256(output).hexdigest(),
         )
     ),
     signature=None,
 )
 
+
 msg_base64 = base64.b64encode(req.SerializeToString())
-print(msg_base64)
-
-# Read the wasm file using pathlib
-
-# print length in megabytes
-print(f'{len(long_body) / 1024 / 1024} MB')
 
 resp = requests.post(
     'http://localhost:8080/api/v1/rpc',
     headers={'X-Client-Request': msg_base64},
-    data=long_body,
+    data=output,
 )
 
 print(resp.headers)
+
+# long_body = Path('dist/wasm_oss/main.wasm').read_bytes()
+
+
+# msg_base64 = base64.b64encode(req.SerializeToString())
+# print(msg_base64)
+
+# # Read the wasm file using pathlib
+
+# # print length in megabytes
+# print(f'{len(long_body) / 1024 / 1024} MB')

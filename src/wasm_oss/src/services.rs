@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
-pub mod boot;
 pub mod console;
 pub mod server;
 

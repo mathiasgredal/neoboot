@@ -169,3 +169,6 @@ Next steps are:
 - Embed and run the wasm payload into u-boot using mkimage FIT format
 - Embed and load the configuration file into u-boot
 - Validate hash of the chainload payload
+
+distro.rst is a very good reference for the u-boot configuration.
+We can use get_boot_src(), to get the disk which we booted from.
