@@ -18,6 +18,7 @@ include $(SRC_DIR)/u-boot/Makefile
 include $(SRC_DIR)/wasm_oss/Makefile
 include $(SRC_DIR)/proxyclient/Makefile
 include $(SRC_DIR)/linux/Makefile
+include $(SRC_DIR)/cli/Makefile
 
 # ================================================
 #  T A R G E T S                                 #

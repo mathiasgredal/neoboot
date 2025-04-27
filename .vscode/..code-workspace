@@ -18,6 +18,11 @@
 		"rust-analyzer.cargo.targetDir": "${workspaceFolder}/build/cargo",
 		"rust-analyzer.check.command": "clippy",
 		"editor.formatOnSave": true,
+		"gopls": {
+			"build.buildFlags": [
+				"-mod=mod"
+			]
+		},
 		"files.exclude": {
 			"**/*.egg-info": true,
 			"**/*.pyc": true,

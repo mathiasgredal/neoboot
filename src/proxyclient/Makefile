@@ -1,5 +1,5 @@
 # ================================================
-#  WASM_OSS Configuration                        #
+#  PROXYCLIENT Configuration                        #
 # ================================================
 
 -include ../../tools/shared.mk
