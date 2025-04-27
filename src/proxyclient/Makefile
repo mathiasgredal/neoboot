@@ -10,8 +10,10 @@ PROXYCLIENT_DIR	?= $(SRC_DIR)/proxyclient
 #  PROXYCLIENT Targets	                             #
 # ================================================
 
-.PHONY: proxyclient_run
+.PHONY: proxyclient_boot proxyclient_chain
 
-proxyclient_run: $(VENV_DIR)
-	@$(VENV_DIR)/bin/python -m proxyclient
+proxyclient_boot: $(VENV_DIR)
+	@$(VENV_DIR)/bin/python -m proxyclient boot -t aarch64
 
+proxyclient_chain: $(VENV_DIR)
+	@$(VENV_DIR)/bin/python -m proxyclient chain

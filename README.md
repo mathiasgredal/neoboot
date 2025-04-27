@@ -172,3 +172,21 @@ Next steps are:
 
 distro.rst is a very good reference for the u-boot configuration.
 We can use get_boot_src(), to get the disk which we booted from.
+
+### 2025-03-23
+We can now boot a linux kernel. Whats missing:
+- Cmdline
+    - This can be done by using the `bootargs` environment variable or by modifying the device tree
+    - Initially we probably want to write to the bootargs environment variable
+- Better device tree handling
+- Verifying the length of the payloads
+- Making a progress bar for loading
+- Handle recovery from failed boot
+- Disk boot
+- Build initramfs from docker image [Project Bootfile]
+- Improve proxyclient to allow multiple commands [DONE]
+- Make the boot typed, so we can handle multiple boot types(Linux, OpenBSD, etc.)
+- Multiple boot strategies depending on platform(e.g. 'booti' for aarch64, 'bootz' for x86_64)
+- Move the payload type enum to protobuf schema
+- Implement the gemini boot log
+

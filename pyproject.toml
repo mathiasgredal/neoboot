@@ -15,6 +15,7 @@ dependencies = [
     "protobuf",
     "requests",
     "msgpack",
+    "tqdm",
 ]
 
 [project.optional-dependencies]

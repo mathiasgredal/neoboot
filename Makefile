@@ -31,7 +31,9 @@ linux: linux-amend linux-patches linux-aarch64-dist
 
 rust: wasm_oss_dist
 
-py: proxyclient_run
+pyb: proxyclient_boot
+
+pyc: wasm_oss_dist proxyclient_chain
 
 # ================================================
 #  "Makefiles are the ultimate abstraction layer"
