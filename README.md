@@ -2,6 +2,8 @@
 
 Welcome to the NeoBoot source code monorepo.
 
+
+
 ## Getting Started
 
 To get started, make sure you have Docker or Podman installed and running. Then build U-Boot using `make u-boot`, this will clone down the U-Boot source code and place it in `vendor/u-boot`, with the NeoBoot patches applied. It will then build the bootloader for the default arch(x86_64), and the wasm payload, and finally boot them using QEMU using Docker. The resulting binaries are placed in `dist/(arch)`.
@@ -13,6 +15,7 @@ To speed up builds using ccache, you can start Redis with `u-boot-redis-up`, the
 ## Wasm Bootloader
 Designed like Novel Netware
 
+Declarative Embedded deployments for the AI era.
 
 
 ## TODO:

@@ -60,8 +60,12 @@ func runBuild(cmd *cobra.Command, args []string, cfg *utils.Config) error {
 	}
 
 	// Instantiate the builder
-	builder := build.NewBuilder()
-	if err := builder.Build(bootfile, cfg); err != nil {
+	builder, err := build.NewBuilder(cache, path)
+	if err != nil {
+		return fmt.Errorf("failed to create builder: %w", err)
+	}
+
+	if err := builder.Build(bootfile, *cfg); err != nil {
 		return fmt.Errorf("failed to build image: %w", err)
 	}
 

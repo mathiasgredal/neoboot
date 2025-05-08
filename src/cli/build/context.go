@@ -8,10 +8,11 @@ import (
 type Context struct {
 	Vars    map[string]string
 	Version string
+	Dir     string
 }
 
-func NewContext() *Context {
-	return &Context{Vars: make(map[string]string)}
+func NewContext(dir string) *Context {
+	return &Context{Vars: make(map[string]string), Dir: dir}
 }
 
 func (c *Context) Substitute(s string) string {

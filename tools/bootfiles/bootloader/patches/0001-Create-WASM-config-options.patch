@@ -1,0 +1,70 @@
+From a363f7626766fdf4c8430cd24675c47e68c056a1 Mon Sep 17 00:00:00 2001
+From: Mathias Gredal <mathiasgredal@icloud.com>
+Date: Mon, 30 Dec 2024 01:20:06 +0100
+Subject: [PATCH 01/13] Create WASM config options
+
+---
+ arch/arm/config.mk                | 2 +-
+ cmd/Kconfig                       | 6 ++++++
+ configs/qemu-x86_wasm_defconfig   | 6 ++++++
+ configs/qemu_arm64_wasm_defconfig | 6 ++++++
+ 4 files changed, 19 insertions(+), 1 deletion(-)
+ create mode 100644 configs/qemu-x86_wasm_defconfig
+ create mode 100644 configs/qemu_arm64_wasm_defconfig
+
+diff --git a/arch/arm/config.mk b/arch/arm/config.mk
+index e0045e22..98459a25 100644
+--- a/arch/arm/config.mk
++++ b/arch/arm/config.mk
+@@ -23,7 +23,7 @@ endif
+ 
+ PLATFORM_RELFLAGS += -fno-common $(FIXED_REG)
+ PLATFORM_RELFLAGS += $(call cc-option, -msoft-float) \
+-		     $(call cc-option,-mgeneral-regs-only) \
++		     $(call cc-option) \
+       $(call cc-option,-mshort-load-bytes,$(call cc-option,-malignment-traps,))
+ 
+ # LLVM support
+diff --git a/cmd/Kconfig b/cmd/Kconfig
+index 1d7ddb4e..69347d60 100644
+--- a/cmd/Kconfig
++++ b/cmd/Kconfig
+@@ -3038,3 +3038,9 @@ config CMD_MESON
+ 	  Enable useful commands for the Meson Soc family developed by Amlogic Inc.
+ 
+ endif
++
++config WASM
++	bool "WASM"
++	default n
++	help
++	  Enable WebAssembly support
+diff --git a/configs/qemu-x86_wasm_defconfig b/configs/qemu-x86_wasm_defconfig
+new file mode 100644
+index 00000000..c677f504
+--- /dev/null
++++ b/configs/qemu-x86_wasm_defconfig
+@@ -0,0 +1,6 @@
++#include <configs/qemu-x86_defconfig>
++
++CONFIG_WASM=y
++CONFIG_BOOTCOMMAND="setenv serverip 10.0.2.2; setenv ipaddr 10.0.2.15; setenv netmask 255.255.255.0; tftpboot $loadaddr main.wasm; wasm $loadaddr $filesize" 
++CONFIG_SYS_MALLOC_LEN=0x10000000
++SYS_MALLOC_CLEAR_ON_INIT=n
+\ No newline at end of file
+diff --git a/configs/qemu_arm64_wasm_defconfig b/configs/qemu_arm64_wasm_defconfig
+new file mode 100644
+index 00000000..e1018e72
+--- /dev/null
++++ b/configs/qemu_arm64_wasm_defconfig
+@@ -0,0 +1,6 @@
++#include <configs/qemu_arm64_defconfig>
++
++CONFIG_WASM=y
++CONFIG_BOOTCOMMAND="setenv serverip 10.0.2.2; setenv ipaddr 10.0.2.15; setenv netmask 255.255.255.0; tftpboot $loadaddr main.wasm; wasm $loadaddr $filesize" 
++CONFIG_SYS_MALLOC_LEN=0x10000000
++SYS_MALLOC_CLEAR_ON_INIT=n
+\ No newline at end of file
+-- 
+2.39.3 (Apple Git-146)
+
