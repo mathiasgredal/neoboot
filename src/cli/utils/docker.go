@@ -10,237 +10,361 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 )
 
-// GetDockerClient returns a docker client from the environment
+// DockerBuild specifies the parameters for a Docker image build.
+type DockerBuild struct {
+	Dockerfile       string             `json:"dockerfile"`        // Path to the Dockerfile in the build context
+	DockerfileInline string             `json:"dockerfile_inline"` // Inline Dockerfile content
+	Target           string             `json:"target"`            // Target build stage
+	Context          string             `json:"context"`           // Path to the build context directory, relative to workingDir
+	Args             map[string]*string `json:"args"`              // Build arguments
+}
+
+// BuildImage constructs a Docker image based on d's specifications and returns a tar reader for its first layer.
+func (d *DockerBuild) BuildImage(cli *client.Client, workingDir string, buildContextMiddleware func(*tar.Writer) error) (io.Reader, error) {
+	buildContextPath, err := filepath.Abs(filepath.Join(workingDir, d.Context))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path for build context %q: %w", d.Context, err)
+	}
+
+	tarBuf := new(bytes.Buffer)
+	tarWriter, err := makeTar(buildContextPath, tarBuf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tar archive from context %q: %w", buildContextPath, err)
+	}
+
+	// Add inline Dockerfile if provided.
+	if d.DockerfileInline != "" {
+		dockerfilePathInTar := filepath.ToSlash(d.Dockerfile) // Ensure forward slashes
+		if err := writeFileToTar(tarWriter, dockerfilePathInTar, []byte(d.DockerfileInline)); err != nil {
+			_ = tarWriter.Close() // Attempt to close writer, primary error is more important
+			return nil, fmt.Errorf("failed to write inline Dockerfile to tar archive: %w", err)
+		}
+	}
+
+	// Apply middleware to customize the build context tar.
+	if buildContextMiddleware != nil {
+		if err := buildContextMiddleware(tarWriter); err != nil {
+			_ = tarWriter.Close()
+			return nil, fmt.Errorf("build context middleware failed: %w", err)
+		}
+	}
+
+	// Finalize the tar archive.
+	if err := tarWriter.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close build context tar archive: %w", err)
+	}
+
+	// Build the image. d.Dockerfile is the path *within the tar context*.
+	dockerfilePathForBuild := filepath.ToSlash(d.Dockerfile)
+	imageID, err := buildImage(cli, tarBuf, dockerfilePathForBuild, d.Target, d.Args)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build image: %w", err)
+	}
+
+	// Get the built image as a tar stream.
+	imageTarReadCloser, err := getImageTar(cli, imageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tar for image %q: %w", imageID, err)
+	}
+	defer imageTarReadCloser.Close() // Ensure the ReadCloser is closed
+
+	// Extract the first layer from the image tar.
+	firstLayerReader, err := findFirstLayer(imageTarReadCloser)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find first layer for image %q: %w", imageID, err)
+	}
+
+	return firstLayerReader, nil
+}
+
+// GetDockerClient returns a new Docker client configured from environment variables.
 func GetDockerClient() (*client.Client, error) {
 	apiClient, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create docker client: %w", err)
+		return nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
 	return apiClient, nil
 }
 
-// MakeTar creates a tar archive from a directory
-func MakeTar(src string, buf io.Writer) (*tar.Writer, error) {
-	tw := tar.NewWriter(buf)
-
-	// Raise error if src is not a directory
+// makeTar creates a tar archive from the contents of the src directory into buf.
+// The caller is responsible for closing the returned tar.Writer.
+func makeTar(src string, buf io.Writer) (*tar.Writer, error) {
+	// IsDir is called as in the original snippet. It must be defined elsewhere in the package or imported.
 	if !IsDir(src) {
-		return nil, fmt.Errorf("src is not a directory: %s", src)
+		return nil, fmt.Errorf("source %q is not a directory", src)
 	}
 
-	// walk through every file in the folder
-	filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
-		// Make the file path relative to the base directory, by removing the base directory from the file path
-		relativePath := strings.TrimPrefix(file, src)
+	tw := tar.NewWriter(buf)
 
-		// Generate tar header
-		header, err := tar.FileInfoHeader(fi, relativePath)
+	walkFn := func(currentPath string, fi os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return fmt.Errorf("error accessing %q during tar walk: %w", currentPath, walkErr)
+		}
+
+		relPath, err := filepath.Rel(src, currentPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to determine relative path for %q: %w", currentPath, err)
 		}
+		headerName := filepath.ToSlash(relPath)
 
-		// Must provide real name
-		header.Name = filepath.ToSlash(relativePath)
-
-		// Write header
-		if err := tw.WriteHeader(header); err != nil {
-			return err
-		}
-
-		// If not a dir, write file content
-		if !fi.IsDir() {
-			data, err := os.Open(file)
+		var linkTarget string
+		if fi.Mode()&os.ModeSymlink != 0 {
+			linkTarget, err = os.Readlink(currentPath)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to read symlink %q: %w", currentPath, err)
 			}
-			if _, err := io.Copy(tw, data); err != nil {
-				return err
+		}
+
+		header, err := tar.FileInfoHeader(fi, linkTarget)
+		if err != nil {
+			return fmt.Errorf("failed to create tar header for %q: %w", currentPath, err)
+		}
+		header.Name = headerName
+
+		// Clear user/group info for reproducibility.
+		header.Uid = 0
+		header.Gid = 0
+		header.Uname = ""
+		header.Gname = ""
+
+		if err := tw.WriteHeader(header); err != nil {
+			return fmt.Errorf("failed to write tar header for %q (tar name %q): %w", currentPath, header.Name, err)
+		}
+
+		if fi.Mode().IsRegular() { // Only copy content for regular files.
+			file, errOpenFile := os.Open(currentPath)
+			if errOpenFile != nil {
+				return fmt.Errorf("failed to open file %q: %w", currentPath, errOpenFile)
+			}
+			defer file.Close()
+
+			if _, errCopy := io.Copy(tw, file); errCopy != nil {
+				return fmt.Errorf("failed to copy content of %q to tar: %w", currentPath, errCopy)
 			}
 		}
 		return nil
-	})
+	}
+
+	if err := filepath.Walk(src, walkFn); err != nil {
+		return nil, fmt.Errorf("failed to walk directory %q for taring: %w", src, err)
+	}
 
 	return tw, nil
 }
 
-// FindFirstLayer returns the first layer of a tar archive of a docker image export
-func FindFirstLayer(tar_raw io.Reader) (io.Reader, error) {
-	// Create a tee reader to write into a byte buffer, and use the reader to create a tar.Reader
-	buf := bytes.NewBuffer(nil)
-	tr := io.TeeReader(tar_raw, buf)
-	tar_reader := tar.NewReader(tr)
+// dockerImageManifestEntry defines the structure of entries in manifest.json
+// from `docker save` output.
+type dockerImageManifestEntry struct {
+	Config   string
+	RepoTags []string
+	Layers   []string
+}
 
-	// Capture the first layer name
-	layerName := ""
+// findFirstLayer extracts the reader for the first layer from an image tar stream.
+// The imageTarRaw is expected to be the output of `docker save`.
+// This function buffers the entire imageTarRaw in memory to reliably find the layer,
+// which can be memory-intensive for large images.
+func findFirstLayer(imageTarRaw io.Reader) (io.Reader, error) {
+	tarBuffer := new(bytes.Buffer)
+	tee := io.TeeReader(imageTarRaw, tarBuffer) // Copies imageTarRaw to tarBuffer as it's read
+	tarReaderForManifest := tar.NewReader(tee)
+
+	var firstLayerName string
+	manifestFound := false
+
+	// Pass 1: Find manifest.json and get the first layer's filename.
 	for {
-		header, err := tar_reader.Next()
+		header, err := tarReaderForManifest.Next()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("failed to read tar: %w", err)
+			return nil, fmt.Errorf("failed to read tar entry while searching for manifest: %w", err)
 		}
 
 		if header.Name == "manifest.json" {
-			manifest, err := io.ReadAll(tar_reader)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read manifest: %w", err)
+			manifestBytes, errRead := io.ReadAll(tarReaderForManifest)
+			if errRead != nil {
+				return nil, fmt.Errorf("failed to read manifest.json content: %w", errRead)
 			}
 
-			// Parse the manifest json(note this is not the oci manifest)
-			var manifestJson []map[string]any
-			if err := json.Unmarshal(manifest, &manifestJson); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
+			var manifests []dockerImageManifestEntry
+			if errUnmarshal := json.Unmarshal(manifestBytes, &manifests); errUnmarshal != nil {
+				return nil, fmt.Errorf("failed to unmarshal manifest.json: %w", errUnmarshal)
 			}
-			layerName = manifestJson[0]["Layers"].([]any)[0].(string)
-			break
+
+			if len(manifests) == 0 {
+				return nil, fmt.Errorf("manifest.json is empty or has invalid format")
+			}
+			if len(manifests[0].Layers) == 0 {
+				return nil, fmt.Errorf("first entry in manifest.json has no layers listed")
+			}
+			firstLayerName = manifests[0].Layers[0]
+			manifestFound = true
+			break // Found manifest and layer name
 		}
 	}
 
-	// Check if the layer name is in the tar
-	if layerName == "" {
-		return nil, fmt.Errorf("failed to find layer")
+	if !manifestFound {
+		return nil, fmt.Errorf("manifest.json not found in image tar")
+	}
+	// firstLayerName should be set if manifestFound is true due to checks above.
+
+	// Ensure the entire imageTarRaw is read into tarBuffer.
+	// This is critical if the layer file appears after manifest.json in the tar stream.
+	if _, err := io.Copy(io.Discard, tarReaderForManifest); err != nil {
+		return nil, fmt.Errorf("failed to buffer remaining image tar content: %w", err)
 	}
 
-	// Find the layer in the tar, using the buffer
-	buf_reader := bufio.NewReader(buf)
-	tar_reader = tar.NewReader(buf_reader)
+	// Pass 2: Re-scan the fully populated tarBuffer to find the layer file.
+	bufferedTarReader := tar.NewReader(bytes.NewReader(tarBuffer.Bytes()))
 	for {
-		header, err := tar_reader.Next()
+		header, err := bufferedTarReader.Next()
 		if err == io.EOF {
 			break
 		}
-		if header.Name == layerName {
-			return io.LimitReader(buf_reader, header.Size), nil
+		if err != nil {
+			return nil, fmt.Errorf("failed to read tar entry from buffer for layer %q: %w", firstLayerName, err)
+		}
+
+		if header.Name == firstLayerName {
+			return io.LimitReader(bufferedTarReader, header.Size), nil
 		}
 	}
 
-	return nil, fmt.Errorf("failed to find layer")
+	return nil, fmt.Errorf("layer %q (from manifest) not found in image tar second pass", firstLayerName)
 }
 
+// WriteTarIntoTar writes all entries from tr into tw, prefixing paths with targetDirectory.
+// This version correctly preserves tar entry types and attributes.
 func WriteTarIntoTar(tw *tar.Writer, tr *tar.Reader, targetDirectory string) error {
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
-			fmt.Println("EOF")
 			break
 		}
 		if err != nil {
-			fmt.Println("Error reading tar")
-			return err
-		}
-		fmt.Printf("File: %s\n", header.Name)
-
-		data, err := io.ReadAll(tr)
-		if err != nil {
-			fmt.Println("Error reading file")
-			return err
+			return fmt.Errorf("failed to read next entry from source tar: %w", err)
 		}
 
-		if err := WriteFileToTar(tw, filepath.Join(targetDirectory, header.Name), data); err != nil {
-			fmt.Println("Error writing file")
-			return err
+		originalName := header.Name
+		header.Name = filepath.ToSlash(filepath.Join(targetDirectory, header.Name))
+
+		if err := tw.WriteHeader(header); err != nil {
+			return fmt.Errorf("failed to write header for %q (from %q) to destination tar: %w", header.Name, originalName, err)
+		}
+
+		if header.Size > 0 { // Only copy content if size > 0 (e.g., for regular files)
+			if _, err := io.CopyN(tw, tr, header.Size); err != nil {
+				return fmt.Errorf("failed to copy content for %q (from %q) to destination tar: %w", header.Name, originalName, err)
+			}
 		}
 	}
 	return nil
 }
 
-// WriteFileToTar writes a file to a tar archive
-func WriteFileToTar(tw *tar.Writer, file string, data []byte) error {
-	fmt.Printf("Writing file: %s\n", file)
+// writeFileToTar writes a new file entry to the tar writer.
+// Sets a default mode 0644 for the file.
+func writeFileToTar(tw *tar.Writer, nameInTar string, data []byte) error {
+	cleanName := filepath.ToSlash(nameInTar)
 	header := &tar.Header{
-		Name: file,
+		Name: cleanName,
 		Size: int64(len(data)),
+		Mode: 0644, // Default file mode
 	}
 
 	if err := tw.WriteHeader(header); err != nil {
-		return err
+		return fmt.Errorf("failed to write tar header for %q: %w", cleanName, err)
 	}
 
-	if _, err := tw.Write(data); err != nil {
-		return err
+	if len(data) > 0 {
+		if _, err := tw.Write(data); err != nil {
+			return fmt.Errorf("failed to write data for %q to tar: %w", cleanName, err)
+		}
 	}
 	return nil
 }
 
-func BuildImage(client *client.Client, buildContext io.Reader, dockerfile string, target string, args map[string]*string) (string, error) {
+// refinedDockerBuildMessage unmarshals Docker build output JSON messages.
+type refinedDockerBuildMessage struct {
+	Stream      string `json:"stream"`
+	Status      string `json:"status"`
+	Progress    string `json:"progress"`
+	ErrorDetail struct {
+		Message string `json:"message"`
+	} `json:"errorDetail"`
+	ErrorStr string `json:"error"` // Sometimes errors are here
+	Aux      struct {
+		ID string `json:"ID"`
+	} `json:"aux"`
+}
+
+// buildImage performs the Docker image build.
+func buildImage(dockerClient *client.Client, buildContextTar io.Reader, dockerfilePath string, targetStage string, buildArgs map[string]*string) (string, error) {
 	ctx := context.Background()
-	response, err := client.ImageBuild(ctx, buildContext, types.ImageBuildOptions{
-		Dockerfile: dockerfile,
-		Target:     target,
-		Squash:     true,
-		BuildArgs:  args,
-	})
-	if err != nil {
-		return "", err
+	opts := types.ImageBuildOptions{
+		Dockerfile: dockerfilePath,
+		Target:     targetStage,
+		BuildArgs:  buildArgs,
+		Squash:     true, // As per original
+		Remove:     true, // Good practice: remove intermediate containers
 	}
 
-	// Read the response body one line at a time
-	imageID := ""
-	scanner := bufio.NewScanner(response.Body)
+	buildResp, err := dockerClient.ImageBuild(ctx, buildContextTar, opts)
+	if err != nil {
+		return "", fmt.Errorf("failed to initiate image build: %w", err)
+	}
+	defer buildResp.Body.Close()
+
+	var imageID string
+	scanner := bufio.NewScanner(buildResp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-
-		// Marshal the line into a json object
-		var message map[string]any
-		if err := json.Unmarshal([]byte(line), &message); err != nil {
-			return "", err
+		var msg refinedDockerBuildMessage
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			return "", fmt.Errorf("failed to unmarshal Docker build response line %q: %w", line, err)
 		}
 
-		// If the message is a stream, then print it
-		if message["stream"] != nil {
-			fmt.Printf("Docker Build: %s", message["stream"])
+		if msg.Stream != "" {
+			fmt.Print(msg.Stream)
 		}
 
-		// If the message is aux, return the ID
-		if message["aux"] != nil {
-			imageID = message["aux"].(map[string]any)["ID"].(string)
+		if msg.ErrorDetail.Message != "" {
+			return "", fmt.Errorf("docker build error: %s", msg.ErrorDetail.Message)
+		}
+
+		if msg.ErrorStr != "" && msg.ErrorDetail.Message == "" {
+			return "", fmt.Errorf("docker build error: %s", msg.ErrorStr)
+		}
+
+		if msg.Aux.ID != "" {
+			imageID = msg.Aux.ID
 		}
 	}
-	response.Body.Close()
+
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("error reading Docker build response: %w", err)
+	}
 
 	if imageID == "" {
-		return "", fmt.Errorf("failed to build image")
+		return "", fmt.Errorf("docker build completed but no image ID was found (build may have failed silently or an error message was missed)")
 	}
 
 	return imageID, nil
 }
 
-func GetImageTar(client *client.Client, imageID string) (io.Reader, error) {
+// getImageTar retrieves the image as a tar archive stream.
+// Returns an io.ReadCloser which the caller must close.
+func getImageTar(dockerClient *client.Client, imageID string) (io.ReadCloser, error) {
 	ctx := context.Background()
-	response, err := client.ImageSave(ctx, []string{imageID})
+	imageTarStream, err := dockerClient.ImageSave(ctx, []string{imageID})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to save image %q: %w", imageID, err)
 	}
-
-	return response, nil
+	return imageTarStream, nil
 }
-
-// This file contains utility functions for Docker operations, specifically building images, pulling images and pushing images.
-
-// apiClient, err := client.NewClientWithOpts(client.FromEnv)
-// if err != nil {
-// 	panic(err)
-// }
-// defer apiClient.Close()
-
-// ctx := context.Background()
-// info, err := apiClient.Info(ctx)
-// serialized_info, _ := json.MarshalIndent(info, "", "  ")
-// fmt.Printf("%s\n", string(serialized_info))
-
-// containers, err := apiClient.ContainerList(context.Background(), container.ListOptions{All: true})
-// if err != nil {
-// 	panic(err)
-// }
-
-// for _, ctr := range containers {
-// 	fmt.Printf("%s %s (status: %s)\n", ctr.ID, ctr.Image, ctr.Status)
-// }
-// return

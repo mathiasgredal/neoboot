@@ -257,6 +257,7 @@ func (c *Cache) Write(blobReader io.Reader) (string, int64, error) {
 		if c.metadata.Layers[layerIndex].Size != size && size != 0 { // Size might be 0 for an empty blob
 			log.Warnf("Size mismatch for existing layer %s: metadata %d, new %d. Keeping original metadata size.", layerID, c.metadata.Layers[layerIndex].Size, size)
 		}
+		c.metadataMutex.Unlock()
 		return layerID, size, nil
 	} else {
 		newLayer := Layer{

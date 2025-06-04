@@ -3,8 +3,9 @@ package oci
 type MediaType string
 
 const (
-	MediaTypeImageManifest MediaType = "application/vnd.oci.image.manifest.v1+json"
-	MediaTypeImageConfig   MediaType = "application/vnd.oci.image.config.v1+json"
+	MediaTypeImageManifest        MediaType = "application/vnd.oci.image.manifest.v1+json"
+	MediaTypeImageConfig          MediaType = "application/vnd.oci.image.config.v1+json"
+	MediaTypeImageLayerBootloader MediaType = "application/vnd.oci.image.layer.bootloader.v1+json"
 )
 
 type Manifest struct {
@@ -29,42 +30,35 @@ type ImageRootfs struct {
 	DiffIDs []string `json:"diff_ids"`
 }
 
+type LayerMeta struct {
+	MediaType         MediaType `json:"media_type"`
+	Selector          *string   `json:"selector"`
+	Version           *string   `json:"version"`
+	LocationDirective *string   `json:"location"`
+}
+
 type Config struct {
-	Created string      `json:"created"`
-	Author  string      `json:"author"`
-	OS      string      `json:"os"`
-	Config  ImageConfig `json:"config"`
-	Rootfs  ImageRootfs `json:"rootfs"`
+	Created   string      `json:"created"`
+	Author    string      `json:"author"`
+	OS        string      `json:"os"`
+	Config    ImageConfig `json:"config"`
+	Rootfs    ImageRootfs `json:"rootfs"`
+	LayerMeta []LayerMeta `json:"layer_meta"`
 }
 
-func NewManifest() *Manifest {
-	return &Manifest{
-		SchemaVersion: 2,
-		MediaType:     MediaTypeImageManifest,
-	}
+func AddLayer(manifest *Manifest, config *Config, mediaType MediaType, digest string, size int64, selector *string, version *string, locationDirective *string) {
+	manifest.Layers = append(manifest.Layers, Descriptor{
+		MediaType: mediaType,
+		Digest:    digest,
+		Size:      size,
+	})
+
+	config.Rootfs.DiffIDs = append(config.Rootfs.DiffIDs, digest)
+
+	config.LayerMeta = append(config.LayerMeta, LayerMeta{
+		MediaType:         mediaType,
+		Selector:          selector,
+		Version:           version,
+		LocationDirective: locationDirective,
+	})
 }
-
-// func (m *Manifest) AddConfig(cache *Cache, config Config) error {
-// 	config.Rootfs.DiffIDs = []string{}
-
-// 	// Serialize the config to JSON
-// 	configJSON, err := json.Marshal(config)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	// Write the config to the cache
-// 	digest, size, err := cache.Write(bytes.NewReader(configJSON))
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	// Add the config to the manifest
-// 	m.Config = Descriptor{
-// 		MediaType: MediaTypeImageConfig,
-// 		Digest:    digest,
-// 		Size:      size,
-// 	}
-
-// 	return nil
-// }

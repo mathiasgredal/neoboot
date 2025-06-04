@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	log "github.com/sirupsen/logrus"
 
@@ -19,22 +20,22 @@ import (
 // - Support different sources for the bootloader
 // - Support var substitution in the bootloader build args
 type BootloaderBuildArgs struct {
-	Type          string      `json:"type"`
-	Selector      string      `json:"selector"`
-	Version       string      `json:"version"`
-	From          string      `json:"from"`
-	FromLocal     string      `json:"from_local"`
-	BuildRaw      any         `json:"build"`
-	Build         DockerBuild `json:"-"`
-	Location      string      `json:"location"`
-	FromWasm      string      `json:"from_wasm"`
-	FromLocalWasm string      `json:"from_local_wasm"`
-	BuildWasmRaw  any         `json:"build_wasm"`
-	BuildWasm     DockerBuild `json:"-"`
-	LocationWasm  string      `json:"location_wasm"`
+	Type          string            `json:"type"`
+	Selector      string            `json:"selector"`
+	Version       string            `json:"version"`
+	From          string            `json:"from"`
+	FromLocal     string            `json:"from_local"`
+	BuildRaw      any               `json:"build"`
+	Build         utils.DockerBuild `json:"-"`
+	Location      string            `json:"location"`
+	FromWasm      string            `json:"from_wasm"`
+	FromLocalWasm string            `json:"from_local_wasm"`
+	BuildWasmRaw  any               `json:"build_wasm"`
+	BuildWasm     utils.DockerBuild `json:"-"`
+	LocationWasm  string            `json:"location_wasm"`
 }
 
-func HandleBootloader(ctx *context.Context, cache *cache.Cache, manifest *oci.Manifest, args any) error {
+func HandleBootloader(ctx *context.Context, cache *cache.Cache, manifest *oci.Manifest, config *oci.Config, args any) error {
 	// Parse the arguments
 	buildArgs, err := parseBootloaderBuildArgs(args)
 	if err != nil {
@@ -53,7 +54,7 @@ func HandleBootloader(ctx *context.Context, cache *cache.Cache, manifest *oci.Ma
 	}
 
 	// Switch on the type of build for wasm(from, from_local, build, location)
-	var wasmResource *tar.Reader
+	var wasmResource io.Reader
 	switch getBuildWasmType(buildArgs) {
 	case "from":
 		return fmt.Errorf("from wasm not implemented yet")
@@ -71,7 +72,7 @@ func HandleBootloader(ctx *context.Context, cache *cache.Cache, manifest *oci.Ma
 	}
 
 	// Switch on the type of build for bootloader(from, from_local, build, location)
-	var bootloaderResource *tar.Reader
+	var bootloaderResource io.Reader
 	switch getBuildType(buildArgs) {
 	case "from":
 		return fmt.Errorf("from bootloader not implemented yet")
@@ -81,7 +82,7 @@ func HandleBootloader(ctx *context.Context, cache *cache.Cache, manifest *oci.Ma
 		return fmt.Errorf("location bootloader not implemented yet")
 	case "build":
 		bootloaderResource, err = buildArgs.Build.BuildImage(client, ctx.Dir, func(tw *tar.Writer) error {
-			return utils.WriteTarIntoTar(tw, wasmResource, "/wasm")
+			return utils.WriteTarIntoTar(tw, tar.NewReader(wasmResource), "/wasm")
 		})
 
 		if err != nil {
@@ -98,12 +99,10 @@ func HandleBootloader(ctx *context.Context, cache *cache.Cache, manifest *oci.Ma
 	}
 
 	log.Infof("Added layer to cache: %s", digest)
+	log.Infof("Size: %d", size)
 
 	// Add the layer to the manifest
-	manifest.Layers = append(manifest.Layers, oci.Descriptor{
-		Digest: digest,
-		Size:   size,
-	})
+	oci.AddLayer(manifest, config, oci.MediaTypeImageLayerBootloader, digest, size, &buildArgs.Selector, &buildArgs.Version, nil)
 
 	return nil
 }
@@ -121,7 +120,7 @@ func parseBootloaderBuildArgs(args any) (BootloaderBuildArgs, error) {
 
 	switch buildArgs.BuildRaw.(type) {
 	case string:
-		buildArgs.Build = DockerBuild{
+		buildArgs.Build = utils.DockerBuild{
 			Context: buildArgs.BuildRaw.(string),
 		}
 	default:
@@ -136,7 +135,7 @@ func parseBootloaderBuildArgs(args any) (BootloaderBuildArgs, error) {
 
 	switch buildArgs.BuildWasmRaw.(type) {
 	case string:
-		buildArgs.BuildWasm = DockerBuild{
+		buildArgs.BuildWasm = utils.DockerBuild{
 			Context: buildArgs.BuildWasmRaw.(string),
 		}
 	default:

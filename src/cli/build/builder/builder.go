@@ -19,6 +19,7 @@ type Builder struct {
 	context  *context.Context
 	cache    *cache.Cache
 	manifest *oci.Manifest
+	config   *oci.Config
 }
 
 func NewBuilder(cache *cache.Cache, dir string, tag string) (*Builder, error) {
@@ -27,40 +28,31 @@ func NewBuilder(cache *cache.Cache, dir string, tag string) (*Builder, error) {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	// Make an image config
-	imageConfig := oci.Config{
-		Created: time.Now().Format(time.RFC3339),
-		Author:  "neoboot",
-		OS:      "linux",
-		Config: oci.ImageConfig{
-			State: "bootfile_state",
+	return &Builder{
+		context: context.NewContext(absDir, tag),
+		cache:   cache,
+		manifest: &oci.Manifest{
+			SchemaVersion: 2,
+			MediaType:     oci.MediaTypeImageManifest,
+			Config: oci.Descriptor{
+				MediaType: oci.MediaTypeImageConfig,
+				Digest:    "",
+				Size:      0,
+			},
+			Layers: []oci.Descriptor{},
 		},
-		Rootfs: oci.ImageRootfs{
-			Type:    "layers",
-			DiffIDs: []string{},
-		},
-	}
-
-	// Marshal the image config and write it to the cache
-	imageConfigJSON, err := json.Marshal(imageConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal image config: %w", err)
-	}
-	configDigest, size, err := cache.Write(bytes.NewReader(imageConfigJSON))
-	if err != nil {
-		return nil, fmt.Errorf("failed to write image config to cache: %w", err)
-	}
-
-	return &Builder{context: context.NewContext(absDir, tag), cache: cache, manifest: &oci.Manifest{
-		SchemaVersion: 2,
-		MediaType:     oci.MediaTypeImageManifest,
-		Config: oci.Descriptor{
-			MediaType: oci.MediaTypeImageConfig,
-			Digest:    configDigest,
-			Size:      size,
-		},
-		Layers: []oci.Descriptor{},
-	}}, nil
+		config: &oci.Config{
+			Created: time.Now().Format(time.RFC3339),
+			Author:  "neoboot",
+			OS:      "linux",
+			Config: oci.ImageConfig{
+				State: "bootfile_state",
+			},
+			Rootfs: oci.ImageRootfs{
+				Type:    "layers",
+				DiffIDs: []string{},
+			},
+		}}, nil
 }
 
 func (b *Builder) Build(buildSteps []parser.Step, cfg utils.Config) error {
@@ -79,7 +71,7 @@ func (b *Builder) Build(buildSteps []parser.Step, cfg utils.Config) error {
 				return err
 			}
 		case "BOOTLOADER":
-			if err := steps.HandleBootloader(b.context, b.cache, b.manifest, step.Args); err != nil {
+			if err := steps.HandleBootloader(b.context, b.cache, b.manifest, b.config, step.Args); err != nil {
 				return err
 			}
 		// Add cases for other commands
@@ -87,6 +79,20 @@ func (b *Builder) Build(buildSteps []parser.Step, cfg utils.Config) error {
 			return fmt.Errorf("unknown command: %s", step.Command)
 		}
 	}
+
+	// Marshal the image config and write it to the cache
+	imageConfigJSON, err := json.Marshal(b.config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal image config: %w", err)
+	}
+	configDigest, size, err := b.cache.Write(bytes.NewReader(imageConfigJSON))
+	if err != nil {
+		return fmt.Errorf("failed to write image config to cache: %w", err)
+	}
+
+	// Update the manifest with the config digest
+	b.manifest.Config.Digest = configDigest
+	b.manifest.Config.Size = size
 
 	// Write the manifest to the cache
 	b.cache.WriteManifest(b.context.Tag, b.manifest)
