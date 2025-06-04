@@ -1,0 +1,430 @@
+{
+    "$schema": "https://json-schema.org/draft-07/schema",
+    "$id": "bootfile_spec.json",
+    "type": "array",
+    "title": "Bootfile Specification",
+    "description": "Bootfile is a specification for boot files",
+    "items": {
+        "type": "object",
+        "properties": {
+            "ARG": {
+                "$ref": "#/definitions/arg"
+            },
+            "VERSION": {
+                "$ref": "#/definitions/version"
+            },
+            "FROM": {
+                "$ref": "#/definitions/from"
+            },
+            "BOOTLOADER": {
+                "$ref": "#/definitions/bootloader"
+            },
+            "KERNEL": {
+                "$ref": "#/definitions/kernel"
+            },
+            "DEVICE_TREE": {
+                "$ref": "#/definitions/device_tree"
+            },
+            "INITRAMFS": {
+                "$ref": "#/definitions/initramfs"
+            },
+            "ROOT_FS": {
+                "$ref": "#/definitions/rootfs"
+            },
+            "EXTRA": {
+                "$ref": "#/definitions/extra"
+            }
+        }
+    },
+    "definitions": {
+        "arg": {
+            "type": "object",
+            "additionalProperties": false,
+            "oneOf": [
+                {
+                    "type": "string"
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string"
+                        },
+                        "value": {
+                            "type": "string"
+                        }
+                    }
+                }
+            ]
+        },
+        "version": {
+            "type": "string",
+            "description": "Version of the bootfile."
+        },
+        "from": {
+            "type": "string",
+            "description": "Image to use as the base image. Can be a tag, digest, or reference."
+        },
+        "bootloader": {
+            "description": "Bootloader build step",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "description": "Type of bootloader to build.",
+                    "type": "string",
+                    "enum": [
+                        "u-boot",
+                        "ipxe"
+                    ]
+                },
+                "selector": {
+                    "$ref": "#/definitions/selector"
+                },
+                "version": {
+                    "description": "Version of the bootloader that is built.",
+                    "type": "string"
+                },
+                "from": {
+                    "description": "URL to an OCI image, containing the bootloader resources.",
+                    "type": "string"
+                },
+                "from_local": {
+                    "description": "Path to a local directory, containing the bootloader resources.",
+                    "type": "string"
+                },
+                "build": {
+                    "description": "Configuration options for building the primary bootloader.",
+                    "oneOf": [
+                        {
+                            "type": "string",
+                            "description": "Path to the build context. Can be a relative path."
+                        },
+                        {
+                            "$ref": "#/definitions/docker_buildstep"
+                        }
+                    ]
+                },
+                "location": {
+                    "$ref": "#/definitions/location_directive"
+                },
+                "from_wasm": {
+                    "description": "URL to an OCI image, containing the wasm bootloader resources.",
+                    "type": "string"
+                },
+                "from_local_wasm": {
+                    "description": "Path to a local directory, containing the wasm bootloader resources.",
+                    "type": "string"
+                },
+                "build_wasm": {
+                    "description": "Configuration options for building the wasm bootloader.",
+                    "oneOf": [
+                        {
+                            "type": "string",
+                            "description": "Path to the wasm build context. Can be a relative path."
+                        },
+                        {
+                            "$ref": "#/definitions/docker_buildstep"
+                        }
+                    ]
+                },
+                "location_wasm": {
+                    "$ref": "#/definitions/location_directive"
+                }
+            },
+            "not": {
+                "anyOf": [
+                    {
+                        "required": [
+                            "from",
+                            "from_local",
+                            "build",
+                            "location"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "from_wasm",
+                            "from_local_wasm",
+                            "build_wasm",
+                            "location_wasm"
+                        ]
+                    }
+                ]
+            }
+        },
+        "kernel": {
+            "type": "object",
+            "description": "Kernel build step.",
+            "additionalProperties": false,
+            "properties": {
+                "selector": {
+                    "$ref": "#/definitions/selector"
+                },
+                "version": {
+                    "$ref": "#/definitions/version"
+                },
+                "from": {
+                    "description": "URL to an OCI image, containing the kernel resources.",
+                    "type": "string"
+                },
+                "from_local": {
+                    "description": "Path to a local directory, containing the kernel resources.",
+                    "type": "string"
+                },
+                "build": {
+                    "description": "Configuration options for building the kernel.",
+                    "oneOf": [
+                        {
+                            "type": "string",
+                            "description": "Path to the build context. Can be a relative path."
+                        },
+                        {
+                            "$ref": "#/definitions/docker_buildstep"
+                        }
+                    ]
+                },
+                "location": {
+                    "$ref": "#/definitions/location_directive"
+                },
+                "cmdline": {
+                    "type": "string",
+                    "description": "Kernel command line parameters."
+                }
+            },
+            "not": {
+                "anyOf": [
+                    {
+                        "required": [
+                            "from",
+                            "from_local",
+                            "build",
+                            "location"
+                        ]
+                    }
+                ]
+            }
+        },
+        "device_tree": {
+            "type": "object",
+            "description": "Device tree build step.",
+            "additionalProperties": false,
+            "properties": {
+                "selector": {
+                    "$ref": "#/definitions/selector"
+                },
+                "from_local": {
+                    "description": "Path to a specified device tree on the local filesystem.",
+                    "type": "string"
+                },
+                "build": {
+                    "description": "Configuration options for building the device tree.",
+                    "oneOf": [
+                        {
+                            "type": "string",
+                            "description": "Path to the build context. Can be a relative path."
+                        },
+                        {
+                            "$ref": "#/definitions/docker_buildstep"
+                        }
+                    ]
+                },
+                "location": {
+                    "$ref": "#/definitions/location_directive"
+                }
+            },
+            "not": {
+                "anyOf": [
+                    {
+                        "required": [
+                            "from_local",
+                            "build",
+                            "location"
+                        ]
+                    }
+                ]
+            }
+        },
+        "initramfs": {
+            "type": "string",
+            "description": "Initramfs build step.",
+            "oneOf": [
+                {
+                    "type": "string",
+                    "description": "URL to an OCI image, containing the initramfs resources."
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "version": {
+                            "type": "string"
+                        },
+                        "selector": {
+                            "$ref": "#/definitions/selector"
+                        },
+                        "from": {
+                            "type": "string"
+                        },
+                        "build": {
+                            "description": "Configuration options for building the initramfs.",
+                            "oneOf": [
+                                {
+                                    "type": "string",
+                                    "description": "Path to the build context. Can be a relative path."
+                                },
+                                {
+                                    "$ref": "#/definitions/docker_buildstep"
+                                }
+                            ]
+                        },
+                        "location": {
+                            "$ref": "#/definitions/location_directive"
+                        }
+                    },
+                    "not": {
+                        "anyOf": [
+                            {
+                                "required": [
+                                    "from",
+                                    "build",
+                                    "location"
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        "rootfs": {
+            "description": "Path to the rootfs. Can be a relative path.",
+            "oneOf": [
+                {
+                    "type": "string",
+                    "description": "URL to an OCI image, containing the rootfs resources."
+                },
+                {
+                    "type": "object",
+                    "description": "Build the rootfs using a Dockerfile.",
+                    "additionalProperties": false,
+                    "properties": {
+                        "version": {
+                            "type": "string"
+                        },
+                        "selector": {
+                            "$ref": "#/definitions/selector"
+                        },
+                        "from": {
+                            "type": "string"
+                        },
+                        "build": {
+                            "description": "Configuration options for building the rootfs.",
+                            "oneOf": [
+                                {
+                                    "type": "string",
+                                    "description": "Path to the build context. Can be a relative path."
+                                },
+                                {
+                                    "$ref": "#/definitions/docker_buildstep"
+                                }
+                            ]
+                        },
+                        "location": {
+                            "$ref": "#/definitions/location_directive"
+                        }
+                    },
+                    "not": {
+                        "anyOf": [
+                            {
+                                "required": [
+                                    "from",
+                                    "build",
+                                    "location"
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        "extra": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "docker_buildstep": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "dockerfile": {
+                    "type": "string",
+                    "description": "Path to the Dockerfile. Can be a relative path."
+                },
+                "dockerfile_inline": {
+                    "type": "string",
+                    "description": "Inline Dockerfile."
+                },
+                "target": {
+                    "type": "string",
+                    "description": "The name of the build stage, which contains the build output.",
+                    "default": "dist"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Path to the build context. Can be a relative path."
+                },
+                "args": {
+                    "$ref": "#/definitions/list_or_dict",
+                    "description": "Build-time variables, specified as a map or a list of KEY=VAL pairs."
+                }
+            },
+            "not": {
+                "anyOf": [
+                    {
+                        "required": [
+                            "dockerfile",
+                            "dockerfile_inline"
+                        ]
+                    }
+                ]
+            }
+        },
+        "selector": {
+            "type": "string",
+            "description": "Selector to identify the target device. This is a string that is evaluated as a boolean expression. The following variables are available: device, arch, os, variant, version, etc."
+        },
+        "location_directive": {
+            "type": "string",
+            "description": "Location directive for a given resource, e.g. ''kernel:/boot/my-devicetree.dtb''."
+        },
+        "list_or_dict": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "description": "A dictionary mapping keys to values.",
+                    "patternProperties": {
+                        ".+": {
+                            "type": [
+                                "string",
+                                "number",
+                                "boolean",
+                                "null"
+                            ],
+                            "description": "Value for the key, which can be a string, number, boolean, or null."
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                {
+                    "type": "array",
+                    "description": "A list of unique string values.",
+                    "items": {
+                        "type": "string",
+                        "description": "A string value in the list."
+                    },
+                    "uniqueItems": true
+                }
+            ],
+            "description": "Either a dictionary mapping keys to values, or a list of strings."
+        }
+    }
+}

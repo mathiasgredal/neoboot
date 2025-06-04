@@ -1,4 +1,4 @@
-From 00cb7f74802ae4fe07ecceb4c81db3b05a8a3d36 Mon Sep 17 00:00:00 2001
+From f37057a3fb8b4ad39293553d24bf370596a29e1a Mon Sep 17 00:00:00 2001
 From: Mathias Gredal <mathiasgredal@icloud.com>
 Date: Thu, 20 Feb 2025 23:26:02 +0100
 Subject: [PATCH 11/13] Adding dns

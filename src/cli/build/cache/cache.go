@@ -1,4 +1,4 @@
-package build
+package cache
 
 import (
 	"crypto/sha256"
@@ -8,37 +8,37 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gofrs/flock"
+	"github.com/mathiasgredal/neoboot/src/cli/build/oci"
 	log "github.com/sirupsen/logrus"
 )
 
 type Layer struct {
 	ID       string `json:"id"`
-	CacheID  string `json:"cache_id"` // ID for the content in cache (e.g., sha256:...)
-	Digest   string `json:"digest"`   // OCI content digest (often same as CacheID)
+	CacheID  string `json:"cache_id"`
 	Size     int64  `json:"size"`
-	Created  string `json:"created"`   // RFC3339Nano format
-	LastRead string `json:"last_read"` // RFC3339Nano format
+	Created  string `json:"created"`
+	LastRead string `json:"last_read"`
 }
 
-// LayersMetadata defines the structure of layers.json
 type LayersMetadata struct {
-	Layers map[string]Layer `json:"layers"`
+	Layers []Layer `json:"layers"`
 }
 
 type Cache struct {
 	Dir           string
 	layersDir     string
 	manifestsDir  string
-	layersFile    string // path to layers.json
-	lockFile      string // path to layers.lock for FS-level lock on layers.json modification
+	layersFile    string
+	lockFile      string
 	flock         *flock.Flock
 	metadata      LayersMetadata
-	metadataMutex sync.RWMutex // Mutex for in-memory metadata access
+	metadataMutex sync.RWMutex
 }
 
 func NewCache(dir string) (*Cache, error) {
@@ -105,7 +105,7 @@ func (c *Cache) loadMetadata() error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			log.Infof("layers.json not found at %s, initializing new metadata structure.", c.layersFile)
-			c.metadata.Layers = make(map[string]Layer)
+			c.metadata.Layers = []Layer{}
 			return nil
 		}
 		return fmt.Errorf("failed to read %s: %w", c.layersFile, err)
@@ -113,19 +113,19 @@ func (c *Cache) loadMetadata() error {
 
 	if len(data) == 0 {
 		log.Infof("layers.json at %s is empty, initializing new metadata structure.", c.layersFile)
-		c.metadata.Layers = make(map[string]Layer)
+		c.metadata.Layers = []Layer{}
 		return nil
 	}
 
 	if err := json.Unmarshal(data, &c.metadata); err != nil {
 		log.Warnf("Failed to unmarshal %s: %v. Initializing with empty metadata.", c.layersFile, err)
-		c.metadata.Layers = make(map[string]Layer)
+		c.metadata.Layers = []Layer{}
 		// Depending on strictness, could return: fmt.Errorf("corrupt metadata file %s: %w", c.layersFile, err)
 		return nil
 	}
 
 	if c.metadata.Layers == nil { // Handle JSON like {"layers": null}
-		c.metadata.Layers = make(map[string]Layer)
+		c.metadata.Layers = []Layer{}
 	}
 
 	log.Debugf("Loaded %d layer metadata entries from %s", len(c.metadata.Layers), c.layersFile)
@@ -168,11 +168,11 @@ func (c *Cache) saveMetadata() error {
 	return nil
 }
 
-// Write a blob to the cache, update layers.json, and return the digest (CacheID).
-func (c *Cache) Write(blobReader io.Reader) (string, error) {
+// Write a blob to the cache, update layers.json, and return the digest.
+func (c *Cache) Write(blobReader io.Reader) (string, int64, error) {
 	tempBlobFile, err := os.CreateTemp(c.layersDir, "tmp-blob-*")
 	if err != nil {
-		return "", fmt.Errorf("failed to create temp blob file in %s: %w", c.layersDir, err)
+		return "", 0, fmt.Errorf("failed to create temp blob file in %s: %w", c.layersDir, err)
 	}
 	tempBlobPath := tempBlobFile.Name()
 
@@ -193,26 +193,25 @@ func (c *Cache) Write(blobReader io.Reader) (string, error) {
 
 	size, err := io.Copy(tempBlobFile, teeReader)
 	if err != nil {
-		return "", fmt.Errorf("failed to copy blob content to %s: %w", tempBlobPath, err)
+		return "", 0, fmt.Errorf("failed to copy blob content to %s: %w", tempBlobPath, err)
 	}
 
 	// Content is in tempBlobFile. Close it before further operations like rename or stat.
 	if err := tempBlobFile.Close(); err != nil {
 		// If close fails here, the defer will also try to close it.
-		return "", fmt.Errorf("failed to close temp blob file %s after writing: %w", tempBlobPath, err)
+		return "", 0, fmt.Errorf("failed to close temp blob file %s after writing: %w", tempBlobPath, err)
 	}
 
 	digestSum := hasher.Sum(nil)
 	hexDigest := hex.EncodeToString(digestSum)
-	layerID := fmt.Sprintf("sha256:%s", hexDigest) // Used as Layer.ID, Layer.CacheID, Layer.Digest
+	layerID := fmt.Sprintf("sha256-%s", hexDigest) // Used as Layer.ID, Layer.CacheID
 
 	// Filename for the blob uses a dash instead of colon for better filesystem compatibility.
-	blobFileName := "sha256-" + hexDigest
-	finalBlobPath := filepath.Join(c.layersDir, blobFileName)
+	finalBlobPath := filepath.Join(c.layersDir, layerID)
 
 	// Check if blob already exists.
 	if _, statErr := os.Stat(finalBlobPath); statErr == nil {
-		log.Infof("Layer blob %s (file: %s) already exists. Discarding temp file %s.", layerID, blobFileName, tempBlobPath)
+		log.Infof("Layer blob %s (file: %s) already exists. Discarding temp file %s.", layerID, finalBlobPath, tempBlobPath)
 		// Temp file is redundant. Remove it explicitly.
 		if err := os.Remove(tempBlobPath); err != nil && !os.IsNotExist(err) {
 			log.Warnf("Error removing already existing temporary blob file %s: %v", tempBlobPath, err)
@@ -222,48 +221,92 @@ func (c *Cache) Write(blobReader io.Reader) (string, error) {
 		// Blob does not exist, rename temp file to its final path.
 		if err := os.Rename(tempBlobPath, finalBlobPath); err != nil {
 			// If rename fails, tempBlobPath still exists; defer will attempt cleanup.
-			return "", fmt.Errorf("failed to rename temp blob %s to %s: %w", tempBlobPath, finalBlobPath, err)
+			return "", 0, fmt.Errorf("failed to rename temp blob %s to %s: %w", tempBlobPath, finalBlobPath, err)
 		}
 		tempFileHandled = true // Renamed, so tempBlobPath is gone.
 		log.Infof("Stored layer blob %s to %s", layerID, finalBlobPath)
 	} else {
 		// Some other error occurred during stat. Defer will attempt cleanup of tempBlobPath.
-		return "", fmt.Errorf("failed to stat final blob path %s: %w", finalBlobPath, statErr)
+		return "", 0, fmt.Errorf("failed to stat final blob path %s: %w", finalBlobPath, statErr)
 	}
 
 	// Update layers.json metadata
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
+	// Lock the metadata for writing
+	log.Infof("Locking metadata for writing")
 	c.metadataMutex.Lock()
+
 	// Ensure Layers map is initialized (it should be by loadMetadata, but defensive check).
 	if c.metadata.Layers == nil {
-		c.metadata.Layers = make(map[string]Layer)
+		c.metadata.Layers = []Layer{}
 	}
 
-	existingLayer, found := c.metadata.Layers[layerID]
-	if found {
-		existingLayer.LastRead = now
-		if existingLayer.Size != size && size != 0 { // Size might be 0 for an empty blob
-			log.Warnf("Size mismatch for existing layer %s: metadata %d, new %d. Keeping original metadata size.", layerID, existingLayer.Size, size)
+	// Find if layer exists in the metadata
+	layerIndex := -1
+	for i, layer := range c.metadata.Layers {
+		if layer.ID == layerID {
+			layerIndex = i
+			break
 		}
-		c.metadata.Layers[layerID] = existingLayer
+	}
+
+	// If layer exists, update the metadata
+	if layerIndex != -1 {
+		c.metadata.Layers[layerIndex].LastRead = now
+		if c.metadata.Layers[layerIndex].Size != size && size != 0 { // Size might be 0 for an empty blob
+			log.Warnf("Size mismatch for existing layer %s: metadata %d, new %d. Keeping original metadata size.", layerID, c.metadata.Layers[layerIndex].Size, size)
+		}
+		return layerID, size, nil
 	} else {
 		newLayer := Layer{
 			ID:       layerID,
-			CacheID:  layerID,
-			Digest:   layerID,
+			CacheID:  layerID, // TODO: Change this to the cache ID
 			Size:     size,
 			Created:  now,
 			LastRead: now,
 		}
-		c.metadata.Layers[layerID] = newLayer
+		c.metadata.Layers = append(c.metadata.Layers, newLayer)
 	}
+
 	c.metadataMutex.Unlock()
 
 	if err := c.saveMetadata(); err != nil {
 		// Blob operation successful, but metadata save failed. Cache might be inconsistent.
-		return "", fmt.Errorf("blob %s processed, but failed to save metadata: %w", layerID, err)
+		return "", 0, fmt.Errorf("blob %s processed, but failed to save metadata: %w", layerID, err)
 	}
 
-	return layerID, nil
+	return layerID, size, nil
+}
+
+var tagRegex = regexp.MustCompile(`^(?P<repository>[\w.\-_]+|)(?:/|)(?P<image>[a-z0-9.\-_]+(?:/[a-z0-9.\-_]+|))(:(?P<tag>[\w.\-_]{1,255})|)$`)
+
+func (c *Cache) WriteManifest(name string, manifest *oci.Manifest) error {
+	manifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		return fmt.Errorf("failed to marshal manifest: %w", err)
+	}
+
+	// Validate the name and extract the repository, image, and tag
+	match := tagRegex.FindStringSubmatch(name)
+	result := make(map[string]string)
+	for i, name := range tagRegex.SubexpNames() {
+		if i != 0 && name != "" {
+			result[name] = match[i]
+		}
+	}
+
+	if !tagRegex.MatchString(name) {
+		return fmt.Errorf("invalid tag format: %s", name)
+	}
+	repository := result["repository"]
+	image := result["image"]
+	tag := result["tag"]
+
+	// Write the manifest to the cache, using this folder structure:
+	manifestDir := filepath.Join(c.manifestsDir, repository, image)
+	if err := os.MkdirAll(manifestDir, 0755); err != nil {
+		return fmt.Errorf("failed to create manifest image directory %s: %w", manifestDir, err)
+	}
+	return os.WriteFile(filepath.Join(manifestDir, tag), manifestJSON, 0644)
 }

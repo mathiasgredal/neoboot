@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mathiasgredal/neoboot/src/cli/build"
+	"github.com/mathiasgredal/neoboot/src/cli/build/builder"
+	"github.com/mathiasgredal/neoboot/src/cli/build/cache"
+	"github.com/mathiasgredal/neoboot/src/cli/build/parser"
 	"github.com/mathiasgredal/neoboot/src/cli/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -18,7 +20,7 @@ func NewBuildCommand(cfg *utils.Config) *cobra.Command {
 		RunE:    func(cmd *cobra.Command, args []string) error { return runBuild(cmd, args, cfg) },
 		Example: `neoboot build -t my-image:latest .`,
 	}
-	// cmd.Flags().StringP("file", "f", "", "path to a bootfile")
+
 	cmd.Flags().StringP("tag", "t", "", "tagged name to apply to the built image")
 	cmd.MarkFlagRequired("tag")
 	return cmd
@@ -43,7 +45,7 @@ func runBuild(cmd *cobra.Command, args []string, cfg *utils.Config) error {
 	if _, err := os.Stat(bootfilePath); os.IsNotExist(err) {
 		return fmt.Errorf("bootfile not found at %s", bootfilePath)
 	}
-	bootfile, err := build.Parse(bootfilePath)
+	bootfile, err := parser.Parse(bootfilePath)
 	if err != nil {
 		return fmt.Errorf("failed to parse bootfile: %w", err)
 	}
@@ -54,13 +56,13 @@ func runBuild(cmd *cobra.Command, args []string, cfg *utils.Config) error {
 	}
 
 	// Instantiate the image cache
-	cache, err := build.NewCache(cfg.Paths.CacheDir)
+	cache, err := cache.NewCache(cfg.Paths.CacheDir)
 	if err != nil {
 		return fmt.Errorf("failed to create cache: %w", err)
 	}
 
 	// Instantiate the builder
-	builder, err := build.NewBuilder(cache, path)
+	builder, err := builder.NewBuilder(cache, path, tag)
 	if err != nil {
 		return fmt.Errorf("failed to create builder: %w", err)
 	}

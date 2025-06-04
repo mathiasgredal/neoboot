@@ -1,13 +1,13 @@
-import pkgutil
 import importlib
 import inspect
 import logging
+import pkgutil
 
 from proxyclient.commands.base_command import BaseCommand
 
 logger = logging.getLogger(__name__)
 
-COMMANDS = {}
+COMMANDS: dict[str, type[BaseCommand]] = {}
 
 
 def discover_commands():

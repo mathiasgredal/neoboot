@@ -1,4 +1,4 @@
-From b099aa6489efc98ff31962ec21aa1d93b234f720 Mon Sep 17 00:00:00 2001
+From 153f589c44b9f3f31a3158b625149bff1dd4c60c Mon Sep 17 00:00:00 2001
 From: Mathias Gredal <mathiasgredal@icloud.com>
 Date: Mon, 30 Dec 2024 02:56:56 +0100
 Subject: [PATCH 04/13] Add math compat

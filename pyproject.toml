@@ -50,6 +50,8 @@ select = [
     'PYI066', # flake8-pyi
 ]
 ignore = [
+    'D100', # pycodestyle: missing-module-docstring
+    'D104', # pycodestyle: missing-class-docstring
     'D105', # pycodestyle: undocumented-magic-method
     'D107', # pycodestyle: undocumented-public-init
     'D205', # pycodestyle: missing-blank-line-after-summary

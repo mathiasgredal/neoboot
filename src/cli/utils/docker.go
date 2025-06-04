@@ -3,6 +3,7 @@ package utils
 import (
 	"archive/tar"
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/docker/docker/client"
 )
 
+// GetDockerClient returns a docker client from the environment
 func GetDockerClient() (*client.Client, error) {
 	apiClient, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
@@ -23,14 +25,7 @@ func GetDockerClient() (*client.Client, error) {
 	return apiClient, nil
 }
 
-func IsDir(path string) bool {
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return info.IsDir()
-}
-
+// MakeTar creates a tar archive from a directory
 func MakeTar(base string, src string, buf io.Writer) (*tar.Writer, error) {
 	tw := tar.NewWriter(buf)
 
@@ -41,27 +36,24 @@ func MakeTar(base string, src string, buf io.Writer) (*tar.Writer, error) {
 
 	// walk through every file in the folder
 	filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
-		fmt.Printf("Walking file: %s\n", file)
-		fmt.Printf("Base: %s\n", base)
 		// Make the file path relative to the base directory, by removing the base directory from the file path
 		relativePath := strings.TrimPrefix(file, base)
-		fmt.Printf("Relative path: %s\n", relativePath)
 
-		// generate tar header
+		// Generate tar header
 		header, err := tar.FileInfoHeader(fi, relativePath)
 		if err != nil {
 			return err
 		}
 
-		// must provide real name
-		// (see https://golang.org/src/archive/tar/common.go?#L626)
+		// Must provide real name
 		header.Name = filepath.ToSlash(relativePath)
 
-		// write header
+		// Write header
 		if err := tw.WriteHeader(header); err != nil {
 			return err
 		}
-		// if not a dir, write file content
+
+		// If not a dir, write file content
 		if !fi.IsDir() {
 			data, err := os.Open(file)
 			if err != nil {
@@ -77,6 +69,85 @@ func MakeTar(base string, src string, buf io.Writer) (*tar.Writer, error) {
 	return tw, nil
 }
 
+// FindFirstLayer returns the first layer of a tar archive of a docker image export
+func FindFirstLayer(tar_raw io.Reader) (io.Reader, error) {
+	// Create a tee reader to write into a byte buffer, and use the reader to create a tar.Reader
+	buf := bytes.NewBuffer(nil)
+	tr := io.TeeReader(tar_raw, buf)
+	tar_reader := tar.NewReader(tr)
+
+	// Capture the first layer name
+	layerName := ""
+	for {
+		header, err := tar_reader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to read tar: %w", err)
+		}
+
+		if header.Name == "manifest.json" {
+			manifest, err := io.ReadAll(tar_reader)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read manifest: %w", err)
+			}
+
+			// Parse the manifest json(note this is not the oci manifest)
+			var manifestJson []map[string]any
+			if err := json.Unmarshal(manifest, &manifestJson); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
+			}
+			layerName = manifestJson[0]["Layers"].([]any)[0].(string)
+			break
+		}
+	}
+
+	// Check if the layer name is in the tar
+	if layerName == "" {
+		return nil, fmt.Errorf("failed to find layer")
+	}
+
+	// Find the layer in the tar, using the buffer
+	buf_reader := bufio.NewReader(buf)
+	tar_reader = tar.NewReader(buf_reader)
+	for {
+		header, err := tar_reader.Next()
+		if err == io.EOF {
+			break
+		}
+		if header.Name == layerName {
+			// Create an io.Reader from the buffer, with the size of the layer
+			return io.LimitReader(buf_reader, header.Size), nil
+		}
+	}
+
+	return nil, fmt.Errorf("failed to find layer")
+}
+
+func WriteTarIntoTar(tw *tar.Writer, tr *tar.Reader, targetDirectory string) error {
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		data, err := io.ReadAll(tr)
+		if err != nil {
+			return err
+		}
+
+		if err := WriteFileToTar(tw, filepath.Join(targetDirectory, header.Name), data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// WriteFileToTar writes a file to a tar archive
 func WriteFileToTar(tw *tar.Writer, file string, data []byte) error {
 	header := &tar.Header{
 		Name: file,
@@ -92,12 +163,13 @@ func WriteFileToTar(tw *tar.Writer, file string, data []byte) error {
 	return nil
 }
 
-func BuildImage(client *client.Client, buildContext io.Reader) (string, error) {
+func BuildImage(client *client.Client, buildContext io.Reader, target string, args map[string]*string) (string, error) {
 	ctx := context.Background()
 	response, err := client.ImageBuild(ctx, buildContext, types.ImageBuildOptions{
 		Dockerfile: "Dockerfile",
-		Target:     "dist",
+		Target:     target,
 		Squash:     true,
+		BuildArgs:  args,
 	})
 	if err != nil {
 		return "", err
@@ -136,14 +208,6 @@ func GetImageTar(client *client.Client, imageID string) (io.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// Write the response to a file
-	file, err := os.Create("image.tar")
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	io.Copy(file, response)
 
 	return response, nil
 }

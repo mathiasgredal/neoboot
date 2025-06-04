@@ -1,4 +1,4 @@
-package build
+package context
 
 import (
 	"regexp"
@@ -9,10 +9,11 @@ type Context struct {
 	Vars    map[string]string
 	Version string
 	Dir     string
+	Tag     string
 }
 
-func NewContext(dir string) *Context {
-	return &Context{Vars: make(map[string]string), Dir: dir}
+func NewContext(dir string, tag string) *Context {
+	return &Context{Vars: make(map[string]string), Dir: dir, Tag: tag}
 }
 
 func (c *Context) Substitute(s string) string {

@@ -1,12 +1,44 @@
-- FROM: scratch # ghcr.io/neoboot/rpi-standard
+# yaml-language-server: $schema=../../src/cli/utils/resources/bootfile-spec.json
+- FROM: scratch
 - BOOTLOADER:
-    type: u-boot
-    selector: "device=='rpi4' && arch=='arm64'"
-    version: "2025.01"
-    builder: localhost/neoboot/u-boot:aarch64-0.0.1 # ghcr.io/neoboot/u-boot-builder:latest
-    build_args:
-        DEFCONFIG: rpi_4_defconfig
-        CROSS_COMPILE: aarch64-linux-gnu-
-    context: ./bootloader/patches
-
-# - ROOT_FS: ./Dockerfile
+      type: u-boot
+      selector: "device=='rpi4' && arch=='arm64'"
+      version: "2025.01"
+      build:
+          dockerfile: Dockerfile
+          context: ./bootloader/patches
+          target: dist
+          args:
+              DEFCONFIG: rpi_4_defconfig
+              CROSS_COMPILE: aarch64-linux-gnu-
+      build_wasm:
+          dockerfile: Dockerfile
+          target: dist
+# - ROOT_FS:
+#       version: ""
+#       selector: ""
+#       build:
+#           dockerfile: Dockerfile
+#           context: .
+#           target: dist
+# build: .
+# build:
+#     dockerfile: Dockerfile
+#     context: .
+#     target: dist
+#     args:
+#         DEFCONFIG: rpi_4_defconfig
+#         CROSS_COMPILE: aarch64-linux-gnu-
+# build_wasm: ./wasm
+# build_wasm: https://github.com/mycompany/example.git#branch_or_tag:subdirectory
+# build_wasm:
+#     dockerfile_inline: |
+#         FROM alpine
+#         RUN ...
+# build_wasm:
+#     dockerfile: Dockerfile
+#     context: .
+#     target: dist
+#     args:
+#         DEFCONFIG: rpi_4_defconfig
+#         CROSS_COMPILE: aarch64-linux-gnu-

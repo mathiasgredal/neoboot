@@ -14,10 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 class BootCommand(BaseCommand):
+    """Boot a Linux kernel via the proxy."""
+
     COMMAND_NAME = 'boot'
     COMMAND_HELP = 'Boot a Linux kernel via the proxy.'
 
     def add_arguments(self, parser: argparse.ArgumentParser):
+        """Add arguments to the parser."""
         parser.add_argument(
             '-t', '--target', required=True, choices=config.SUPPORTED_ARCHS, help='Target architecture.'
         )
@@ -31,6 +34,7 @@ class BootCommand(BaseCommand):
         )
 
     def run(self, args: argparse.Namespace):
+        """Run the boot command."""
         logger.info(f'Starting Linux boot command for target: {args.target}')
 
         # Determine file paths

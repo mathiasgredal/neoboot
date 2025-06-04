@@ -8,6 +8,7 @@ require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/docker/docker v28.1.1+incompatible
 	github.com/gofrs/flock v0.12.1
+	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	gopkg.in/yaml.v3 v3.0.1

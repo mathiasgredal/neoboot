@@ -78,6 +78,7 @@ pub extern "C" fn main() {
         // Teardown network
         unsafe { ffi::env_net_teardown() };
     }
+
     // Boot
     let mut boot_controller = std::sync::Arc::<
         futures::lock::Mutex<controllers::boot::BootController>,
