@@ -3,7 +3,6 @@ package steps
 import (
 	"archive/tar"
 	"bytes"
-	"os"
 	"path/filepath"
 
 	"github.com/docker/docker/client"
@@ -27,29 +26,23 @@ func (d *DockerBuild) BuildImage(client *client.Client, workingDir string, build
 
 	// Create a tar archive of the build context
 	buf := bytes.NewBuffer(nil)
-	tw, err := utils.MakeTar(workingDir, buildContext, buf)
+	tw, err := utils.MakeTar(buildContext, buf)
 	if err != nil {
 		return nil, err
 	}
 
-	// Add the dockerfile to the build context
-	dockerfileContent := []byte{}
+	// Add the dockerfile inline to the build context
 	if d.DockerfileInline != "" {
-		dockerfileContent = []byte(d.DockerfileInline)
-	} else {
-		dockerfileContent, err = os.ReadFile(filepath.Join(buildContext, d.Dockerfile))
-		if err != nil {
+		if err := utils.WriteFileToTar(tw, d.Dockerfile, []byte(d.DockerfileInline)); err != nil {
 			return nil, err
 		}
 	}
 
-	if err := utils.WriteFileToTar(tw, "Dockerfile", dockerfileContent); err != nil {
-		return nil, err
-	}
-
 	// Run the build context middleware, to allow for customizing the build context
-	if err := buildContextMiddleware(tw); err != nil {
-		return nil, err
+	if buildContextMiddleware != nil {
+		if err := buildContextMiddleware(tw); err != nil {
+			return nil, err
+		}
 	}
 
 	// Close the tar archive
@@ -58,7 +51,7 @@ func (d *DockerBuild) BuildImage(client *client.Client, workingDir string, build
 	}
 
 	// Build the image
-	imageID, err := utils.BuildImage(client, buf, d.Target, d.Args)
+	imageID, err := utils.BuildImage(client, buf, d.Dockerfile, d.Target, d.Args)
 	if err != nil {
 		return nil, err
 	}

@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/mathiasgredal/neoboot/src/cli/build/cache"
+	"github.com/mathiasgredal/neoboot/src/cli/build/context"
 	"github.com/mathiasgredal/neoboot/src/cli/build/oci"
 	"github.com/mathiasgredal/neoboot/src/cli/utils"
 )
@@ -13,13 +16,8 @@ import (
 // Handle the BOOTLOADER command
 // TODO:
 // - Support caching
-// - Support build args
-// - Support build_wasm
-// - Support build_dockerfile
-// - Support build_dockerfile_inline
 // - Support different sources for the bootloader
 // - Support var substitution in the bootloader build args
-
 type BootloaderBuildArgs struct {
 	Type          string      `json:"type"`
 	Selector      string      `json:"selector"`
@@ -36,7 +34,7 @@ type BootloaderBuildArgs struct {
 	LocationWasm  string      `json:"location_wasm"`
 }
 
-func HandleBootloader(cache *cache.Cache, manifest *oci.Manifest, args any) error {
+func HandleBootloader(ctx *context.Context, cache *cache.Cache, manifest *oci.Manifest, args any) error {
 	// Parse the arguments
 	buildArgs, err := parseBootloaderBuildArgs(args)
 	if err != nil {
@@ -64,9 +62,7 @@ func HandleBootloader(cache *cache.Cache, manifest *oci.Manifest, args any) erro
 	case "location":
 		return fmt.Errorf("location wasm not implemented yet")
 	case "build":
-		wasmResource, err = buildArgs.BuildWasm.BuildImage(client, buildArgs.BuildWasm.Context, func(tw *tar.Writer) error {
-			return nil
-		})
+		wasmResource, err = buildArgs.BuildWasm.BuildImage(client, ctx.Dir, nil)
 		if err != nil {
 			return fmt.Errorf("failed to build wasm: %w", err)
 		}
@@ -84,7 +80,7 @@ func HandleBootloader(cache *cache.Cache, manifest *oci.Manifest, args any) erro
 	case "location":
 		return fmt.Errorf("location bootloader not implemented yet")
 	case "build":
-		bootloaderResource, err = buildArgs.Build.BuildImage(client, buildArgs.Build.Context, func(tw *tar.Writer) error {
+		bootloaderResource, err = buildArgs.Build.BuildImage(client, ctx.Dir, func(tw *tar.Writer) error {
 			return utils.WriteTarIntoTar(tw, wasmResource, "/wasm")
 		})
 
@@ -101,7 +97,7 @@ func HandleBootloader(cache *cache.Cache, manifest *oci.Manifest, args any) erro
 		return fmt.Errorf("failed to add layer to cache: %w", err)
 	}
 
-	fmt.Printf("Added layer to cache: %s\n", digest)
+	log.Infof("Added layer to cache: %s", digest)
 
 	// Add the layer to the manifest
 	manifest.Layers = append(manifest.Layers, oci.Descriptor{
@@ -128,10 +124,14 @@ func parseBootloaderBuildArgs(args any) (BootloaderBuildArgs, error) {
 		buildArgs.Build = DockerBuild{
 			Context: buildArgs.BuildRaw.(string),
 		}
-	case DockerBuild:
-		buildArgs.Build = buildArgs.BuildRaw.(DockerBuild)
 	default:
-		return BootloaderBuildArgs{}, fmt.Errorf("invalid build type")
+		jsonData, err := json.Marshal(buildArgs.BuildRaw)
+		if err != nil {
+			return BootloaderBuildArgs{}, fmt.Errorf("failed to marshal build args: %w", err)
+		}
+		if err := json.Unmarshal(jsonData, &buildArgs.Build); err != nil {
+			return BootloaderBuildArgs{}, fmt.Errorf("failed to unmarshal build args: %w", err)
+		}
 	}
 
 	switch buildArgs.BuildWasmRaw.(type) {
@@ -139,10 +139,30 @@ func parseBootloaderBuildArgs(args any) (BootloaderBuildArgs, error) {
 		buildArgs.BuildWasm = DockerBuild{
 			Context: buildArgs.BuildWasmRaw.(string),
 		}
-	case DockerBuild:
-		buildArgs.BuildWasm = buildArgs.BuildWasmRaw.(DockerBuild)
 	default:
-		return BootloaderBuildArgs{}, fmt.Errorf("invalid build wasm type")
+		jsonData, err := json.Marshal(buildArgs.BuildWasmRaw)
+		if err != nil {
+			return BootloaderBuildArgs{}, fmt.Errorf("failed to marshal build wasm args: %w", err)
+		}
+		if err := json.Unmarshal(jsonData, &buildArgs.BuildWasm); err != nil {
+			return BootloaderBuildArgs{}, fmt.Errorf("failed to unmarshal build wasm args: %w", err)
+		}
+	}
+
+	// Ensure that target is set to dist if not set
+	if buildArgs.Build.Target == "" {
+		buildArgs.Build.Target = "dist"
+	}
+	if buildArgs.BuildWasm.Target == "" {
+		buildArgs.BuildWasm.Target = "dist"
+	}
+
+	// Ensure that dockerfile is set to Dockerfile if not set
+	if buildArgs.Build.Dockerfile == "" {
+		buildArgs.Build.Dockerfile = "Dockerfile"
+	}
+	if buildArgs.BuildWasm.Dockerfile == "" {
+		buildArgs.BuildWasm.Dockerfile = "Dockerfile"
 	}
 
 	return buildArgs, nil
@@ -173,56 +193,3 @@ func getBuildWasmType(buildArgs BootloaderBuildArgs) string {
 	}
 	return "build"
 }
-
-// // Switch on the type of build for bootloader(from, from_local, build, location)
-// // Add the wasm to the context of the bootloader build
-
-// // Make the bootload build args context directory absolute and relative to the builder context directory
-// buildContext, err := filepath.Abs(filepath.Join(b.context.Dir, buildArgs.Context))
-// if err != nil {
-// 	return fmt.Errorf("failed to get absolute path: %w", err)
-// }
-// buildArgs.Context = buildContext
-
-// fmt.Printf("Building bootloader with context: %s\n", buildArgs.Context)
-
-// // Create a tar archive, with the context directory and a Dockerfile
-// buf := bytes.NewBuffer(nil)
-// tw, err := utils.MakeTar(b.context.Dir, buildArgs.Context, buf)
-// if err != nil {
-// 	return fmt.Errorf("failed to create tar archive: %w", err)
-// }
-
-// // Write the Dockerfile to the tar archive
-// // TODO: Check if buildargs is nil
-// dockerfile := fmt.Sprintf("FROM %s as builder\n COPY ./bootloader/patches ./yeet\nFROM scratch as dist\nCOPY --from=builder /yeet /yeet\nCOPY --from=builder /yeet /yeet2\nCOPY --from=builder /yeet /yeet3\n", buildArgs.Builder)
-// if err := utils.WriteFileToTar(tw, "Dockerfile", []byte(dockerfile)); err != nil {
-// 	return fmt.Errorf("failed to write Dockerfile to tar archive: %w", err)
-// }
-
-// // Close the tar archive
-// if err := tw.Close(); err != nil {
-// 	return fmt.Errorf("failed to close tar archive: %w", err)
-// }
-
-// client, err := utils.GetDockerClient()
-// if err != nil {
-// 	return fmt.Errorf("failed to create docker client: %w", err)
-// }
-// imageID, err := utils.BuildImage(client, buf)
-// if err != nil {
-// 	return fmt.Errorf("failed to build image: %w", err)
-// }
-
-// fmt.Printf("Built image: %s\n", imageID)
-
-// image_tar_raw, err := utils.GetImageTar(client, imageID)
-// if err != nil {
-// 	return fmt.Errorf("failed to get image tar: %w", err)
-// }
-
-// // Go through the tar and find the manifest.json, and identify the layer
-// layer, err := FindFirstLayer(image_tar_raw)
-// if err != nil {
-// 	return fmt.Errorf("failed to find manifest: %w", err)
-// }

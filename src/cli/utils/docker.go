@@ -26,7 +26,7 @@ func GetDockerClient() (*client.Client, error) {
 }
 
 // MakeTar creates a tar archive from a directory
-func MakeTar(base string, src string, buf io.Writer) (*tar.Writer, error) {
+func MakeTar(src string, buf io.Writer) (*tar.Writer, error) {
 	tw := tar.NewWriter(buf)
 
 	// Raise error if src is not a directory
@@ -37,7 +37,7 @@ func MakeTar(base string, src string, buf io.Writer) (*tar.Writer, error) {
 	// walk through every file in the folder
 	filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
 		// Make the file path relative to the base directory, by removing the base directory from the file path
-		relativePath := strings.TrimPrefix(file, base)
+		relativePath := strings.TrimPrefix(file, src)
 
 		// Generate tar header
 		header, err := tar.FileInfoHeader(fi, relativePath)
@@ -117,7 +117,6 @@ func FindFirstLayer(tar_raw io.Reader) (io.Reader, error) {
 			break
 		}
 		if header.Name == layerName {
-			// Create an io.Reader from the buffer, with the size of the layer
 			return io.LimitReader(buf_reader, header.Size), nil
 		}
 	}
@@ -129,18 +128,23 @@ func WriteTarIntoTar(tw *tar.Writer, tr *tar.Reader, targetDirectory string) err
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
+			fmt.Println("EOF")
 			break
 		}
 		if err != nil {
+			fmt.Println("Error reading tar")
 			return err
 		}
+		fmt.Printf("File: %s\n", header.Name)
 
 		data, err := io.ReadAll(tr)
 		if err != nil {
+			fmt.Println("Error reading file")
 			return err
 		}
 
 		if err := WriteFileToTar(tw, filepath.Join(targetDirectory, header.Name), data); err != nil {
+			fmt.Println("Error writing file")
 			return err
 		}
 	}
@@ -149,6 +153,7 @@ func WriteTarIntoTar(tw *tar.Writer, tr *tar.Reader, targetDirectory string) err
 
 // WriteFileToTar writes a file to a tar archive
 func WriteFileToTar(tw *tar.Writer, file string, data []byte) error {
+	fmt.Printf("Writing file: %s\n", file)
 	header := &tar.Header{
 		Name: file,
 		Size: int64(len(data)),
@@ -157,16 +162,17 @@ func WriteFileToTar(tw *tar.Writer, file string, data []byte) error {
 	if err := tw.WriteHeader(header); err != nil {
 		return err
 	}
+
 	if _, err := tw.Write(data); err != nil {
 		return err
 	}
 	return nil
 }
 
-func BuildImage(client *client.Client, buildContext io.Reader, target string, args map[string]*string) (string, error) {
+func BuildImage(client *client.Client, buildContext io.Reader, dockerfile string, target string, args map[string]*string) (string, error) {
 	ctx := context.Background()
 	response, err := client.ImageBuild(ctx, buildContext, types.ImageBuildOptions{
-		Dockerfile: "Dockerfile",
+		Dockerfile: dockerfile,
 		Target:     target,
 		Squash:     true,
 		BuildArgs:  args,
@@ -198,6 +204,10 @@ func BuildImage(client *client.Client, buildContext io.Reader, target string, ar
 		}
 	}
 	response.Body.Close()
+
+	if imageID == "" {
+		return "", fmt.Errorf("failed to build image")
+	}
 
 	return imageID, nil
 }

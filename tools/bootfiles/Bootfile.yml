@@ -6,13 +6,14 @@
       version: "2025.01"
       build:
           dockerfile: Dockerfile
-          context: ./bootloader/patches
+          context: ./bootloader
           target: dist
           args:
               DEFCONFIG: rpi_4_defconfig
               CROSS_COMPILE: aarch64-linux-gnu-
       build_wasm:
           dockerfile: Dockerfile
+          context: ./wasm
           target: dist
 # - ROOT_FS:
 #       version: ""

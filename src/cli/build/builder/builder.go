@@ -79,7 +79,7 @@ func (b *Builder) Build(buildSteps []parser.Step, cfg utils.Config) error {
 				return err
 			}
 		case "BOOTLOADER":
-			if err := steps.HandleBootloader(b.cache, b.manifest, step.Args); err != nil {
+			if err := steps.HandleBootloader(b.context, b.cache, b.manifest, step.Args); err != nil {
 				return err
 			}
 		// Add cases for other commands
