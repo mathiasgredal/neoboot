@@ -6,7 +6,7 @@ import (
 
 	"github.com/mathiasgredal/neoboot/src/cli/cmd"
 	"github.com/mathiasgredal/neoboot/src/cli/utils"
-	log "github.com/sirupsen/logrus"
+	"github.com/mathiasgredal/neoboot/src/cli/utils/log"
 	"github.com/spf13/cobra"
 )
 
@@ -14,15 +14,8 @@ func main() {
 	// Initialize root command
 	rootCmd := &cobra.Command{
 		Use:   "neoboot",
-		Short: "Neoboot - A modern bootloader management tool", // Updated description
+		Short: "Neoboot - A modern bootloader management tool",
 	}
-
-	// Configure logging settings
-	log.SetFormatter(&log.TextFormatter{
-		DisableColors: false,
-		FullTimestamp: true,
-	})
-	log.SetLevel(log.DebugLevel)
 
 	// Set up configuration
 	var configPath string
@@ -38,6 +31,8 @@ func main() {
 
 	// Add subcommands
 	rootCmd.AddCommand(cmd.NewBuildCommand(cfg))
+	rootCmd.AddCommand(cmd.NewImagesCommand(cfg))
+	rootCmd.AddCommand(cmd.NewPushCommand(cfg))
 
 	// Execute root command
 	if err := rootCmd.Execute(); err != nil {

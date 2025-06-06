@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
-	log "github.com/sirupsen/logrus"
+	"github.com/mathiasgredal/neoboot/src/cli/utils/log"
 )
 
 // General holds general settings.
@@ -69,7 +69,7 @@ func LoadConfig(path string) (*Config, error) {
 		} else if fileExists("/etc/neoboot.conf") {
 			path = "/etc/neoboot.conf"
 		} else {
-			log.Warn("No configuration file found. Using default settings.")
+			log.Debug("No configuration file found. Using default settings.")
 			return DefaultConfig(), nil
 		}
 	}

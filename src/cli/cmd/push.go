@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"github.com/mathiasgredal/neoboot/src/cli/utils"
-	log "github.com/sirupsen/logrus"
+	"github.com/mathiasgredal/neoboot/src/cli/utils/log"
 	"github.com/spf13/cobra"
 )
 

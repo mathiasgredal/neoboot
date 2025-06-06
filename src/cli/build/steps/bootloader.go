@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/mathiasgredal/neoboot/src/cli/utils/log"
 
 	"github.com/mathiasgredal/neoboot/src/cli/build/cache"
 	"github.com/mathiasgredal/neoboot/src/cli/build/context"
@@ -63,6 +63,7 @@ func HandleBootloader(ctx *context.Context, cache *cache.Cache, manifest *oci.Ma
 	case "location":
 		return fmt.Errorf("location wasm not implemented yet")
 	case "build":
+		log.Infof("Building wasm docker image resource...")
 		wasmResource, err = buildArgs.BuildWasm.BuildImage(client, ctx.Dir, nil)
 		if err != nil {
 			return fmt.Errorf("failed to build wasm: %w", err)
@@ -81,6 +82,7 @@ func HandleBootloader(ctx *context.Context, cache *cache.Cache, manifest *oci.Ma
 	case "location":
 		return fmt.Errorf("location bootloader not implemented yet")
 	case "build":
+		log.Infof("Building bootloader docker image resource...")
 		bootloaderResource, err = buildArgs.Build.BuildImage(client, ctx.Dir, func(tw *tar.Writer) error {
 			return utils.WriteTarIntoTar(tw, tar.NewReader(wasmResource), "/wasm")
 		})
@@ -97,9 +99,6 @@ func HandleBootloader(ctx *context.Context, cache *cache.Cache, manifest *oci.Ma
 	if err != nil {
 		return fmt.Errorf("failed to add layer to cache: %w", err)
 	}
-
-	log.Infof("Added layer to cache: %s", digest)
-	log.Infof("Size: %d", size)
 
 	// Add the layer to the manifest
 	oci.AddLayer(manifest, config, oci.MediaTypeImageLayerBootloader, digest, size, &buildArgs.Selector, &buildArgs.Version, nil)

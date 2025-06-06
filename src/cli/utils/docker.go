@@ -10,9 +10,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
+	"github.com/mathiasgredal/neoboot/src/cli/utils/log"
 )
 
 // DockerBuild specifies the parameters for a Docker image build.
@@ -315,6 +317,9 @@ func buildImage(dockerClient *client.Client, buildContextTar io.Reader, dockerfi
 		Remove:     true, // Good practice: remove intermediate containers
 	}
 
+	s := log.NewLogScroller(os.Stderr, "Building Docker image...", log.WithLinesToDisplay(10))
+	s.Start()
+
 	buildResp, err := dockerClient.ImageBuild(ctx, buildContextTar, opts)
 	if err != nil {
 		return "", fmt.Errorf("failed to initiate image build: %w", err)
@@ -331,14 +336,18 @@ func buildImage(dockerClient *client.Client, buildContextTar io.Reader, dockerfi
 		}
 
 		if msg.Stream != "" {
-			fmt.Print(msg.Stream)
+			msg.Stream = strings.TrimSpace(msg.Stream)
+			msg.Stream = "=> " + msg.Stream
+			s.AddLog(msg.Stream)
 		}
 
 		if msg.ErrorDetail.Message != "" {
+			s.Error()
 			return "", fmt.Errorf("docker build error: %s", msg.ErrorDetail.Message)
 		}
 
 		if msg.ErrorStr != "" && msg.ErrorDetail.Message == "" {
+			s.Error()
 			return "", fmt.Errorf("docker build error: %s", msg.ErrorStr)
 		}
 
@@ -348,12 +357,16 @@ func buildImage(dockerClient *client.Client, buildContextTar io.Reader, dockerfi
 	}
 
 	if err := scanner.Err(); err != nil {
+		s.Error()
 		return "", fmt.Errorf("error reading Docker build response: %w", err)
 	}
 
 	if imageID == "" {
+		s.Error()
 		return "", fmt.Errorf("docker build completed but no image ID was found (build may have failed silently or an error message was missed)")
 	}
+
+	s.Success()
 
 	return imageID, nil
 }

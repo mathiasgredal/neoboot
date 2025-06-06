@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/distribution/reference"
 	"github.com/mathiasgredal/neoboot/src/cli/build/builder"
 	"github.com/mathiasgredal/neoboot/src/cli/build/cache"
 	"github.com/mathiasgredal/neoboot/src/cli/build/parser"
 	"github.com/mathiasgredal/neoboot/src/cli/utils"
-	log "github.com/sirupsen/logrus"
+	"github.com/mathiasgredal/neoboot/src/cli/utils/log"
 	"github.com/spf13/cobra"
 )
 
@@ -27,9 +28,19 @@ func NewBuildCommand(cfg *utils.Config) *cobra.Command {
 }
 
 func runBuild(cmd *cobra.Command, args []string, cfg *utils.Config) error {
-	tag, _ := cmd.Flags().GetString("tag")
+	tag, err := cmd.Flags().GetString("tag")
+	if err != nil {
+		return fmt.Errorf("failed to get tag: %w", err)
+	}
+
+	// Normalize the tag
+	namedTag, err := reference.ParseNormalizedNamed(tag)
+	if err != nil {
+		return fmt.Errorf("failed to parse tag: %w", err)
+	}
+	tag = reference.TagNameOnly(namedTag).String()
 	path := args[0]
-	log.Infof("Building image with tag '%s' from path '%s'\n", tag, path)
+	log.Infof("Building image with tag '%s' from path '%s'", tag, path)
 
 	// Check if the path is a directory
 	info, err := os.Stat(path)

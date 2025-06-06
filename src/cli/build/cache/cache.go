@@ -8,14 +8,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/distribution/reference"
 	"github.com/gofrs/flock"
 	"github.com/mathiasgredal/neoboot/src/cli/build/oci"
-	log "github.com/sirupsen/logrus"
+	"github.com/mathiasgredal/neoboot/src/cli/utils/log"
 )
 
 type Layer struct {
@@ -81,7 +81,7 @@ func NewCache(dir string) (*Cache, error) {
 		return nil, fmt.Errorf("failed to initialize or load cache metadata: %w", err)
 	}
 
-	log.Infof("Using cache directory: %s, layers metadata file: %s", dir, c.layersFile)
+	log.Debugf("Using cache directory: %s, layers metadata file: %s", dir, c.layersFile)
 
 	return c, nil
 }
@@ -104,7 +104,7 @@ func (c *Cache) loadMetadata() error {
 	data, err := os.ReadFile(c.layersFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Infof("layers.json not found at %s, initializing new metadata structure.", c.layersFile)
+			log.Warnf("layers.json not found at %s, initializing new metadata structure.", c.layersFile)
 			c.metadata.Layers = []Layer{}
 			return nil
 		}
@@ -164,7 +164,6 @@ func (c *Cache) saveMetadata() error {
 		return fmt.Errorf("failed to rename temporary metadata %s to %s: %w", tempLayersFilePath, c.layersFile, err)
 	}
 
-	log.Debugf("Successfully saved layers metadata to %s", c.layersFile)
 	return nil
 }
 
@@ -224,7 +223,7 @@ func (c *Cache) Write(blobReader io.Reader) (string, int64, error) {
 			return "", 0, fmt.Errorf("failed to rename temp blob %s to %s: %w", tempBlobPath, finalBlobPath, err)
 		}
 		tempFileHandled = true // Renamed, so tempBlobPath is gone.
-		log.Infof("Stored layer blob %s to %s", layerID, finalBlobPath)
+		log.Tracef("Stored layer blob %s to %s", layerID, finalBlobPath)
 	} else {
 		// Some other error occurred during stat. Defer will attempt cleanup of tempBlobPath.
 		return "", 0, fmt.Errorf("failed to stat final blob path %s: %w", finalBlobPath, statErr)
@@ -234,7 +233,7 @@ func (c *Cache) Write(blobReader io.Reader) (string, int64, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
 	// Lock the metadata for writing
-	log.Infof("Locking metadata for writing")
+	log.Tracef("Locking metadata for writing")
 	c.metadataMutex.Lock()
 
 	// Ensure Layers map is initialized (it should be by loadMetadata, but defensive check).
@@ -280,7 +279,15 @@ func (c *Cache) Write(blobReader io.Reader) (string, int64, error) {
 	return layerID, size, nil
 }
 
-var tagRegex = regexp.MustCompile(`^(?P<repository>[\w.\-_]+|)(?:/|)(?P<image>[a-z0-9.\-_]+(?:/[a-z0-9.\-_]+|))(:(?P<tag>[\w.\-_]{1,255})|)$`)
+func (c *Cache) ReadLayer(layerID string) (io.ReadCloser, error) {
+	// Try to be smart about the layer ID, such as handling sha256- prefix and if the seperator is a : instead of a -
+	if !strings.HasPrefix(layerID, "sha256-") {
+		layerID = "sha256-" + layerID
+	}
+	layerID = strings.ReplaceAll(layerID, ":", "-")
+	layerPath := filepath.Join(c.layersDir, layerID)
+	return os.Open(layerPath)
+}
 
 func (c *Cache) WriteManifest(name string, manifest *oci.Manifest) error {
 	manifestJSON, err := json.Marshal(manifest)
@@ -288,26 +295,122 @@ func (c *Cache) WriteManifest(name string, manifest *oci.Manifest) error {
 		return fmt.Errorf("failed to marshal manifest: %w", err)
 	}
 
-	// Validate the name and extract the repository, image, and tag
-	match := tagRegex.FindStringSubmatch(name)
-	result := make(map[string]string)
-	for i, name := range tagRegex.SubexpNames() {
-		if i != 0 && name != "" {
-			result[name] = match[i]
-		}
-	}
-
-	if !tagRegex.MatchString(name) {
+	named, err := reference.ParseNormalizedNamed(name)
+	if err != nil {
 		return fmt.Errorf("invalid tag format: %s", name)
 	}
-	repository := result["repository"]
-	image := result["image"]
-	tag := result["tag"]
 
 	// Write the manifest to the cache, using this folder structure:
-	manifestDir := filepath.Join(c.manifestsDir, repository, image)
+	manifestDir := filepath.Join(c.manifestsDir, reference.Domain(named), reference.Path(named))
 	if err := os.MkdirAll(manifestDir, 0755); err != nil {
 		return fmt.Errorf("failed to create manifest image directory %s: %w", manifestDir, err)
 	}
-	return os.WriteFile(filepath.Join(manifestDir, tag), manifestJSON, 0644)
+	return os.WriteFile(filepath.Join(manifestDir, named.(reference.Tagged).Tag()), manifestJSON, 0644)
+}
+
+func (c *Cache) ListImages() ([]string, error) {
+	var images []string
+
+	walkFn := func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return fmt.Errorf("failed to walk manifest directory %s: %w", path, err)
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		// Extract the repository, image and tag from the path
+		// manifests/<registry>/<org>/<image>/<tag>
+		pathParts := strings.Split(path, string(os.PathSeparator))
+		if len(pathParts) < 4 {
+			return fmt.Errorf("invalid manifest path %s", path)
+		}
+
+		repository := pathParts[len(pathParts)-4]
+		org := pathParts[len(pathParts)-3]
+		image := pathParts[len(pathParts)-2]
+		tag := pathParts[len(pathParts)-1]
+
+		images = append(images, fmt.Sprintf("%s/%s/%s:%s", repository, org, image, tag))
+
+		return nil
+	}
+
+	if err := filepath.Walk(c.manifestsDir, walkFn); err != nil {
+		return nil, err
+	}
+
+	return images, nil
+}
+
+type ImageInfo struct {
+	Name    string    `json:"name"`
+	Tag     string    `json:"tag"`
+	Digest  string    `json:"digest"`
+	Size    int64     `json:"size"`
+	Created time.Time `json:"created"`
+}
+
+func (c *Cache) GetImageInfo(name string) (*ImageInfo, error) {
+	// Read the image manifest by parsing the name
+	namedImage, err := reference.ParseNormalizedNamed(name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse image name: %w", err)
+	}
+
+	// Get the repository and image name
+	repository := reference.Domain(namedImage)
+	image := reference.Path(namedImage)
+	tag := namedImage.(reference.Tagged).Tag()
+
+	// Read the manifest
+	manifestPath := filepath.Join(c.manifestsDir, repository, image, tag)
+	manifestJSON, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read manifest: %w", err)
+	}
+
+	var manifest oci.Manifest
+	if err := json.Unmarshal(manifestJSON, &manifest); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
+	}
+
+	// Get the config
+	configJSON, err := c.ReadLayer(manifest.Config.Digest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+	defer configJSON.Close()
+
+	var config oci.Config
+	if err := json.NewDecoder(configJSON).Decode(&config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	// Get the created time
+	created := time.Time{}
+	if config.Created != "" {
+		created, err = time.Parse(time.RFC3339Nano, config.Created)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse created time: %w", err)
+		}
+	}
+
+	// Sum the size of all the layers and the config
+	var size int64
+	for _, layer := range manifest.Layers {
+		size += layer.Size
+	}
+	size += manifest.Config.Size
+
+	// Get the image info
+	imageInfo := &ImageInfo{
+		Name:    repository + "/" + image,
+		Tag:     tag,
+		Digest:  manifest.Config.Digest[7:19],
+		Size:    size,
+		Created: created,
+	}
+	return imageInfo, nil
 }
