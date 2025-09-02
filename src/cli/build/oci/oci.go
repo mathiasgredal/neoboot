@@ -1,5 +1,10 @@
 package oci
 
+import (
+	"fmt"
+	"strings"
+)
+
 type MediaType string
 
 const (
@@ -47,8 +52,22 @@ type Config struct {
 }
 
 func AddLayer(manifest *Manifest, config *Config, mediaType MediaType, digest string, size int64, selector *string, version *string, locationDirective *string) {
+	fmt.Println("Adding layer with digest", digest)
+	// If the digest doesnt start with sha256, prefix it
+	if !strings.HasPrefix(digest, "sha256") {
+		digest = "sha256:" + digest
+	}
+
+	// If the digest contains a dash, replace it with a colon
+	if strings.Contains(digest, "-") {
+		digest = strings.ReplaceAll(digest, "-", ":")
+	}
+
+	fmt.Println("Adding layer with digest", digest)
+
+	// Add the layer to the manifest
 	manifest.Layers = append(manifest.Layers, Descriptor{
-		MediaType: mediaType,
+		MediaType: mediaType, // Only write the vendor specific media type to the meta
 		Digest:    digest,
 		Size:      size,
 	})

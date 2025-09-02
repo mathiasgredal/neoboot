@@ -37,7 +37,6 @@ func runImages(cmd *cobra.Command, args []string, cfg *utils.Config) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 
 	// Print header row
-	// Use tabs (\t) to separate columns
 	fmt.Fprintln(w, "REPOSITORY\tTAG\tIMAGE ID\tCREATED\tSIZE")
 
 	// Print data rows
@@ -49,7 +48,7 @@ func runImages(cmd *cobra.Command, args []string, cfg *utils.Config) error {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 			imageInfo.Name,
 			imageInfo.Tag,
-			imageInfo.Digest,
+			imageInfo.ShortDigest,
 			imageInfo.Created.Format("2006-01-02 15:04:05"),
 			utils.BytesHumanize(uint64(imageInfo.Size)),
 		)
@@ -63,13 +62,4 @@ func runImages(cmd *cobra.Command, args []string, cfg *utils.Config) error {
 	}
 
 	return nil
-
-	// Create a tar archive of the image
-
-	// Import the image into the docker daemon
-
-	// Push the image to the destination
-
-	// Clean up the imported image from the docker daemon
-
 }

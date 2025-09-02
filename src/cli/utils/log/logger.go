@@ -15,7 +15,7 @@ var log = &logrus.Logger{
 		TimestampFormat: time.RFC3339,
 	},
 	Hooks: make(logrus.LevelHooks),
-	Level: logrus.InfoLevel,
+	Level: logrus.DebugLevel,
 }
 
 type logFunc func(args ...interface{})

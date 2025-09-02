@@ -91,7 +91,7 @@ func (b *Builder) Build(buildSteps []parser.Step, cfg utils.Config) error {
 	}
 
 	// Update the manifest with the config digest
-	b.manifest.Config.Digest = configDigest
+	b.manifest.Config.Digest = "sha256:" + configDigest[7:]
 	b.manifest.Config.Size = size
 
 	// Write the manifest to the cache

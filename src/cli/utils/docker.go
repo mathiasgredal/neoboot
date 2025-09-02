@@ -15,6 +15,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	"github.com/mathiasgredal/neoboot/src/cli/utils/log"
+	"golang.org/x/term"
 )
 
 // DockerBuild specifies the parameters for a Docker image build.
@@ -42,7 +43,7 @@ func (d *DockerBuild) BuildImage(cli *client.Client, workingDir string, buildCon
 	// Add inline Dockerfile if provided.
 	if d.DockerfileInline != "" {
 		dockerfilePathInTar := filepath.ToSlash(d.Dockerfile) // Ensure forward slashes
-		if err := writeFileToTar(tarWriter, dockerfilePathInTar, []byte(d.DockerfileInline)); err != nil {
+		if err := WriteFileToTar(tarWriter, dockerfilePathInTar, []byte(d.DockerfileInline)); err != nil {
 			_ = tarWriter.Close() // Attempt to close writer, primary error is more important
 			return nil, fmt.Errorf("failed to write inline Dockerfile to tar archive: %w", err)
 		}
@@ -272,7 +273,7 @@ func WriteTarIntoTar(tw *tar.Writer, tr *tar.Reader, targetDirectory string) err
 
 // writeFileToTar writes a new file entry to the tar writer.
 // Sets a default mode 0644 for the file.
-func writeFileToTar(tw *tar.Writer, nameInTar string, data []byte) error {
+func WriteFileToTar(tw *tar.Writer, nameInTar string, data []byte) error {
 	cleanName := filepath.ToSlash(nameInTar)
 	header := &tar.Header{
 		Name: cleanName,
@@ -317,7 +318,23 @@ func buildImage(dockerClient *client.Client, buildContextTar io.Reader, dockerfi
 		Remove:     true, // Good practice: remove intermediate containers
 	}
 
-	s := log.NewLogScroller(os.Stderr, "Building Docker image...", log.WithLinesToDisplay(10))
+	// Get the height of the terminal
+	_, height, err := term.GetSize(0)
+	if err != nil {
+		log.Error("Failed to get terminal size: %v", err)
+		height = 10
+	}
+
+	// Set the height to 4 less than the height capped at max 14 lines of scroll
+	if height > 14 {
+		height = 10
+	} else if height < 8 {
+		height = 4
+	} else {
+		height -= 4
+	}
+
+	s := log.NewLogScroller(os.Stderr, "Building Docker image...", log.WithLinesToDisplay(height))
 	s.Start()
 
 	buildResp, err := dockerClient.ImageBuild(ctx, buildContextTar, opts)

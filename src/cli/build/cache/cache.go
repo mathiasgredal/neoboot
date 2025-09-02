@@ -281,7 +281,7 @@ func (c *Cache) Write(blobReader io.Reader) (string, int64, error) {
 
 func (c *Cache) ReadLayer(layerID string) (io.ReadCloser, error) {
 	// Try to be smart about the layer ID, such as handling sha256- prefix and if the seperator is a : instead of a -
-	if !strings.HasPrefix(layerID, "sha256-") {
+	if !strings.HasPrefix(layerID, "sha256") {
 		layerID = "sha256-" + layerID
 	}
 	layerID = strings.ReplaceAll(layerID, ":", "-")
@@ -320,19 +320,20 @@ func (c *Cache) ListImages() ([]string, error) {
 			return nil
 		}
 
-		// Extract the repository, image and tag from the path
-		// manifests/<registry>/<org>/<image>/<tag>
+		// Subtract the manifests directory from the path and remove the leading slash
+		path = strings.TrimPrefix(path, c.manifestsDir)
+		path = strings.TrimPrefix(path, string(os.PathSeparator))
+
+		// Extract the path and tag from the path
 		pathParts := strings.Split(path, string(os.PathSeparator))
-		if len(pathParts) < 4 {
+		if len(pathParts) < 2 {
 			return fmt.Errorf("invalid manifest path %s", path)
 		}
 
-		repository := pathParts[len(pathParts)-4]
-		org := pathParts[len(pathParts)-3]
-		image := pathParts[len(pathParts)-2]
+		imagePath := pathParts[0 : len(pathParts)-1]
 		tag := pathParts[len(pathParts)-1]
 
-		images = append(images, fmt.Sprintf("%s/%s/%s:%s", repository, org, image, tag))
+		images = append(images, fmt.Sprintf("%s:%s", strings.Join(imagePath, "/"), tag))
 
 		return nil
 	}
@@ -345,19 +346,24 @@ func (c *Cache) ListImages() ([]string, error) {
 }
 
 type ImageInfo struct {
-	Name    string    `json:"name"`
-	Tag     string    `json:"tag"`
-	Digest  string    `json:"digest"`
-	Size    int64     `json:"size"`
-	Created time.Time `json:"created"`
+	Name        string
+	Tag         string
+	ShortDigest string
+	Size        int64
+	Created     time.Time
+	Config      oci.Config
+	Manifest    oci.Manifest
 }
 
 func (c *Cache) GetImageInfo(name string) (*ImageInfo, error) {
 	// Read the image manifest by parsing the name
 	namedImage, err := reference.ParseNormalizedNamed(name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse image name: %w", err)
+		return nil, fmt.Errorf("failed to parse image name: %s, %w", name, err)
 	}
+
+	// Ensure the name has a tag
+	namedImage = reference.TagNameOnly(namedImage)
 
 	// Get the repository and image name
 	repository := reference.Domain(namedImage)
@@ -377,7 +383,7 @@ func (c *Cache) GetImageInfo(name string) (*ImageInfo, error) {
 	}
 
 	// Get the config
-	configJSON, err := c.ReadLayer(manifest.Config.Digest)
+	configJSON, err := c.ReadLayer(manifest.Config.Digest[7:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config: %w", err)
 	}
@@ -406,11 +412,13 @@ func (c *Cache) GetImageInfo(name string) (*ImageInfo, error) {
 
 	// Get the image info
 	imageInfo := &ImageInfo{
-		Name:    repository + "/" + image,
-		Tag:     tag,
-		Digest:  manifest.Config.Digest[7:19],
-		Size:    size,
-		Created: created,
+		Name:        repository + "/" + image,
+		Tag:         tag,
+		ShortDigest: manifest.Config.Digest[7:19],
+		Size:        size,
+		Created:     created,
+		Config:      config,
+		Manifest:    manifest,
 	}
 	return imageInfo, nil
 }

@@ -33,6 +33,7 @@ func main() {
 	rootCmd.AddCommand(cmd.NewBuildCommand(cfg))
 	rootCmd.AddCommand(cmd.NewImagesCommand(cfg))
 	rootCmd.AddCommand(cmd.NewPushCommand(cfg))
+	// Add inspect, rm and prune commands for images
 
 	// Execute root command
 	if err := rootCmd.Execute(); err != nil {
